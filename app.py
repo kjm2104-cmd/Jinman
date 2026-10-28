@@ -229,7 +229,7 @@ def calculate_indicator_sheet(df_raw):
 
         if s_val <= -45:
             sig = "🔥 7차 매수 (풀베팅 / 누적 100%)"
-            invest_pct = "레버리지 100% (2,700만)"
+            invest_pct = "레버리지 100%"
             cash_pct = "현금 관리"
             invest_ratio = 1.0
         elif s_val <= -35:
@@ -356,11 +356,9 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
+        # 초기 잔고 현황판 리스트 (기본 종목 없이 빈 상태로 설정)
         if 'portfolio_items' not in st.session_state:
-            st.session_state.portfolio_items = [
-                {"id": 1, "name": "KODEX 코스닥150레버리지", "qty": 5000, "price": int(s['B1']) if stock_code == "233740" else 10000},
-                {"id": 2, "name": "삼성전자", "qty": 4, "price": 70000 if stock_code != "005930" else int(s['B1'])}
-            ]
+            st.session_state.portfolio_items = []
         
         top_total_stock_eval = 0
         for item in st.session_state.portfolio_items:
@@ -421,10 +419,7 @@ if stock_code:
                 st.caption("보유 중인 종목을 자유롭게 추가/삭제하고 수량과 단가를 입력하시면 실시간 주식 평가금액과 '내 계좌 총자산'이 계산됩니다.")
                 
                 if 'portfolio_items' not in st.session_state:
-                    st.session_state.portfolio_items = [
-                        {"id": 1, "name": "KODEX 코스닥150레버리지", "qty": 5000, "price": int(s['B1']) if stock_code == "233740" else 10000},
-                        {"id": 2, "name": "삼성전자", "qty": 4, "price": 70000 if stock_code != "005930" else int(s['B1'])}
-                    ]
+                    st.session_state.portfolio_items = []
 
                 if st.button("➕ 보유 종목 추가하기"):
                     new_id = max([item["id"] for item in st.session_state.portfolio_items], default=0) + 1
@@ -434,21 +429,24 @@ if stock_code:
                 total_stock_eval = 0
                 items_to_delete = []
 
-                for idx, item in enumerate(st.session_state.portfolio_items):
-                    cols = st.columns([2, 1, 1, 0.6])
-                    with cols[0]:
-                        item["name"] = st.text_input(f"종목명 {idx+1}", value=item["name"], key=f"p_name_{item['id']}")
-                    with cols[1]:
-                        item["qty"] = st.number_input(f"수량 (주) {idx+1}", min_value=0, value=item["qty"], step=1, key=f"p_qty_{item['id']}")
-                    with cols[2]:
-                        item["price"] = st.number_input(f"단가/현재가 {idx+1}", min_value=0, value=item["price"], step=100, key=f"p_price_{item['id']}")
-                    with cols[3]:
-                        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                        if st.button("❌ 삭제", key=f"del_p_{item['id']}"):
-                            items_to_delete.append(item)
+                if not st.session_state.portfolio_items:
+                    st.info("현재 등록된 보유 종목이 없습니다. [➕ 보유 종목 추가하기] 버튼을 눌러 종목을 추가해 주세요.")
+                else:
+                    for idx, item in enumerate(st.session_state.portfolio_items):
+                        cols = st.columns([2, 1, 1, 0.6])
+                        with cols[0]:
+                            item["name"] = st.text_input(f"종목명 {idx+1}", value=item["name"], key=f"p_name_{item['id']}")
+                        with cols[1]:
+                            item["qty"] = st.number_input(f"수량 (주) {idx+1}", min_value=0, value=item["qty"], step=1, key=f"p_qty_{item['id']}")
+                        with cols[2]:
+                            item["price"] = st.number_input(f"단가/현재가 {idx+1}", min_value=0, value=item["price"], step=100, key=f"p_price_{item['id']}")
+                        with cols[3]:
+                            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                            if st.button("❌ 삭제", key=f"del_p_{item['id']}"):
+                                items_to_delete.append(item)
 
-                    eval_amt = item["qty"] * item["price"]
-                    total_stock_eval += eval_amt
+                        eval_amt = item["qty"] * item["price"]
+                        total_stock_eval += eval_amt
 
                 if items_to_delete:
                     for itm in items_to_delete:
