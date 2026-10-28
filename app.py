@@ -24,7 +24,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 모바일 분석기")
+st.subheader("📈 모바일 분석기 (10분할 시소 교대매매)")
 
 # KRX 종목 리스트 캐싱
 @st.cache_data(ttl=86400)
@@ -38,8 +38,8 @@ def get_krx_list():
         return krx
     except Exception:
         fallback_data = {
-            'Code': ['233740', '137400', '088800', '005930', '069500', '229200'],
-            'Name': ['KODEX 코스닥150레버리지', '피엔티', '에이스테크', '삼성전자', 'KODEX 200', 'KODEX 코스닥150선물인버스']
+            'Code': ['233740', '229200', '137400', '088800', '005930', '069500'],
+            'Name': ['KODEX 코스닥150레버리지', 'KODEX 코스닥150선물인버스', '피엔티', '에이스테크', '삼성전자', 'KODEX 200']
         }
         return pd.DataFrame(fallback_data)
 
@@ -107,7 +107,7 @@ def style_table(df_target, df_full):
                 else:
                     styles[idx] = 'color: #111111;'
 
-            # ② S값 태그(Badge) 스타일 적용 ([제안 3])
+            # ② S값 태그 스타일 적용
             elif col_name == 'S':
                 try:
                     s_num = float(val)
@@ -120,7 +120,22 @@ def style_table(df_target, df_full):
                 except:
                     pass
 
-            # ③ MM, PM, LM, RM 열: 알약 모양 태그형 스타일 적용
+            # ③ 10분할 매수 신호 열 강조
+            elif col_name == '매수신호(레버리지)':
+                if '10차' in str(val):
+                    styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
+                elif '8차' in str(val) or '9차' in str(val):
+                    styles[idx] = 'background-color: #D32F2F; color: #FFFFFF; font-weight: bold;'
+                elif '6차' in str(val) or '7차' in str(val):
+                    styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: bold;'
+                elif '4차' in str(val) or '5차' in str(val):
+                    styles[idx] = 'background-color: #FFE0B2; color: #E65100; font-weight: bold;'
+                elif '1차' in str(val) or '2차' in str(val) or '3차' in str(val):
+                    styles[idx] = 'background-color: #FFF9C4; color: #F57F17; font-weight: bold;'
+                elif '스위칭' in str(val):
+                    styles[idx] = 'background-color: #E3F2FD; color: #0D47A1; font-weight: bold;'
+
+            # ④ MM, PM, LM, RM 열: 알약 태그형 그라데이션
             elif col_name in cols_grad:
                 try:
                     v = float(val)
@@ -169,6 +184,7 @@ def calculate_ultima_sheet(df_raw):
 
     mm_list, pm_list, lm_list, s_list, rm_list = [], [], [], [], []
     l_col, m_col, n_col, p_col, q_col, r_col = [None]*n, [None]*n, [None]*n, [None]*n, [None]*n, [None]*n
+    buy_signals = []
 
     state = 'UP'
     peak = int(closes[0])
@@ -276,13 +292,63 @@ def calculate_ultima_sheet(df_raw):
         lm = int(round((p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
         s_val = lm - mm
 
+        # S값 기준 10분할 매수 및 인버스 스위칭 자동 판정 로직
+        if s_val <= -50:
+            sig = "🔥 10차 풀베팅 (바닥)"
+            invest_pct = "100% (3,000만)"
+            cash_pct = "0% (0원)"
+        elif s_val <= -45:
+            sig = "🔥 9차 매수"
+            invest_pct = "90% (2,700만)"
+            cash_pct = "10% (300만)"
+        elif s_val <= -40:
+            sig = "🚨 8차 매수"
+            invest_pct = "80% (2,400만)"
+            cash_pct = "20% (600만)"
+        elif s_val <= -35:
+            sig = "🚨 7차 매수"
+            invest_pct = "70% (2,100만)"
+            cash_pct = "30% (900만)"
+        elif s_val <= -30:
+            sig = "⚠️ 6차 매수"
+            invest_pct = "60% (1,800만)"
+            cash_pct = "40% (1,200만)"
+        elif s_val <= -25:
+            sig = "⚠️ 5차 매수"
+            invest_pct = "50% (1,500만)"
+            cash_pct = "50% (1,500만)"
+        elif s_val <= -20:
+            sig = "⚠️ 4차 매수"
+            invest_pct = "40% (1,200만)"
+            cash_pct = "60% (1,800만)"
+        elif s_val <= -15:
+            sig = "🔍 3차 매수"
+            invest_pct = "30% (900만)"
+            cash_pct = "70% (2,100만)"
+        elif s_val <= -10:
+            sig = "🔍 2차 매수"
+            invest_pct = "20% (600만)"
+            cash_pct = "80% (2,400만)"
+        elif s_val <= -5:
+            sig = "🔍 1차 입질"
+            invest_pct = "10% (300만)"
+            cash_pct = "90% (2,700만)"
+        elif s_val >= 20:
+            sig = "🔄 인버스 스위칭"
+            invest_pct = "인버스 100%"
+            cash_pct = "현금 0%"
+        else:
+            sig = "대기 및 관망"
+            invest_pct = "현금 보유"
+            cash_pct = "현금 보유"
+
         d_cur = pd.Timestamp(dates[i])
         d_start = d_cur - pd.DateOffset(years=1)
         w_slice = closes[:i+1][pd.to_datetime(dates[:i+1]) >= d_start]
         rm = int(round((w_slice.max() / w_slice.min() - 1.0) * 100)) if len(w_slice) > 0 and w_slice.min() > 0 else 0
 
         mm_list.append(mm); pm_list.append(pm); lm_list.append(lm)
-        s_list.append(s_val); rm_list.append(rm)
+        s_list.append(s_val); rm_list.append(rm); buy_signals.append(sig)
 
     def fmt_pos(col_data):
         res = []
@@ -299,6 +365,7 @@ def calculate_ultima_sheet(df_raw):
         '일자': pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d'),
         '종가(B)': closes.astype(int),
         '등락률(C)': [f"{x*100:+.2f}%" for x in chg],
+        '매수신호(레버리지)': buy_signals,
         '중심선(D)': ema.astype(int),
         '거래량(E)': vols.astype(int),
         '거래비율(F)': vol_ratio,
@@ -346,6 +413,9 @@ def calculate_ultima_sheet(df_raw):
         'L9': L9, 'M9': M9, 'N9': N9, 'P9': P9, 'Q9': Q9, 'R9': R9,
         'MM': mm_list[-1], 'PM': pm_list[-1], 'LM': lm_list[-1],
         'S': s_list[-1], 'RM': rm_list[-1],
+        'current_signal': buy_signals[-1],
+        'invest_pct': invest_pct,
+        'cash_pct': cash_pct,
         'state': "상승 파동 중" if state == 'UP' else "하락 파동 중"
     }
     return df_out, summary
@@ -365,14 +435,14 @@ if stock_code:
     if raw_df is not None and not raw_df.empty:
         df_result, s = calculate_ultima_sheet(raw_df)
 
-        st.markdown(f"#### 📌 {stock_name} (`{stock_code}`) — 현재 상태: **{s['state']}**")
+        st.markdown(f"#### 📌 {stock_name} (`{stock_code}`) — 현재 상태: **{s['state']}** | 현재 매수신호: **{s['current_signal']}**")
 
         # 핵심 가격 요약 카드
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("현재가 (B1)", f"{s['B1']:,}원", f"{s['cur_chg']:+.2f}% (거래량 {s['C1']:,})")
-        c2.metric("3M (MM / PM / LM)", f"{s['MM']} / {s['PM']} / {s['LM']}", f"S: {s['S']} | RM: {s['RM']}")
-        c3.metric("상단 기준가 (B7) / 조정전환가 (B8)", f"{s['B7']:,}원", f"전환가 {s['B8']:,}원 | 1차 {s['B9']:,}원")
-        c4.metric("하단 기준가 (C7) / 반등전환가 (C8)", f"{s['C7']:,}원", f"전환가 {s['C8']:,}원 | 1차 {s['C9']:,}원")
+        c2.metric("3M & S값", f"MM:{s['MM']} / PM:{s['PM']} / LM:{s['LM']}", f"S: {s['S']} | 신호: {s['current_signal']}")
+        c3.metric("레버리지 투입 비중", s['invest_pct'], "시드 3,000만 원 기준")
+        c4.metric("확보된 현금 (예수금)", s['cash_pct'], "안전 자산 / 대기 자금")
 
         tab1, tab2, tab3, tab4 = st.tabs([
             "📊 일별 수식표 (전체)",
@@ -382,7 +452,7 @@ if stock_code:
         ])
 
         with tab1:
-            st.caption("🏷️ 태그형 카드 스타일(S값 및 MM~RM 알약 배지 디자인)이 적용되었습니다.")
+            st.caption("📈 S값 기준 [1차 입질 ~ 10차 풀베팅] 및 [인버스 스위칭] 신호가 표에 자동 반영됩니다.")
             df_rev = df_result.iloc[::-1]
             styled_all = style_table(df_rev, df_result)
             st.dataframe(styled_all, use_container_width=True, height=520)
@@ -432,7 +502,7 @@ if stock_code:
                     ws.conditional_formatting.add(cell_range, rule)
 
             st.download_button(
-                label=f"📥 {stock_name}({stock_code}) 태그형 디자인 엑셀(.xlsx) 다운로드",
+                label=f"📥 {stock_name}({stock_code}) 10분할 매수신호 엑셀 다운로드",
                 data=output.getvalue(),
                 file_name=f"모바일분석기_{stock_name}_{stock_code}_{datetime.today().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
