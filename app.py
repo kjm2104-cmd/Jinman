@@ -107,20 +107,20 @@ def style_table(df_target, df_full):
                 else:
                     styles[idx] = 'color: #111111;'
 
-            # ② S값 강조 스타일링
+            # ② S값 스타일 강조 (제안 1 반영: 양수 연한 붉은색 박스 / 음수 연한 파란색 박스)
             elif col_name == 'S':
                 try:
                     s_num = float(val)
                     if s_num > 0:
-                        styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: 900;'
+                        styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: 950; border-radius: 4px;'
                     elif s_num < 0:
-                        styles[idx] = 'background-color: #BBDEFB; color: #0D47A1; font-weight: 900;'
+                        styles[idx] = 'background-color: #BBDEFB; color: #0D47A1; font-weight: 950; border-radius: 4px;'
                     else:
                         styles[idx] = 'background-color: #F5F5F5; color: #333333; font-weight: bold;'
                 except:
                     pass
 
-            # ③ MM, PM, LM, RM 열: 붉은색 그라데이션 히트맵
+            # ③ MM, PM, LM, RM 열: 히트맵 붉은색 농도 그라데이션
             elif col_name in cols_grad:
                 try:
                     v = float(val)
@@ -382,7 +382,7 @@ if stock_code:
         ])
 
         with tab1:
-            st.caption("📈 종가 및 등락률: 전일 대비 상승(붉은색) / 하락(파란색) / 보합(검은색) | S값 및 3M 지표 강조")
+            st.caption("📈 종가 및 등락률: 전일 대비 상승(붉은색) / 하락(파란색) / 보합(검은색) | S값 박스 강조 및 MM~RM 히트맵 적용")
             df_rev = df_result.iloc[::-1]
             styled_all = style_table(df_rev, df_result)
             st.dataframe(styled_all, use_container_width=True, height=520)
