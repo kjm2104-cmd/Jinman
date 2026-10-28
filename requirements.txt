@@ -1,5 +1,7 @@
 streamlit
 pandas
 numpy
-finance-datareader
+requests
 openpyxl
+gspread
+google-auth
