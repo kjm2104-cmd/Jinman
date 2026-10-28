@@ -7,7 +7,7 @@ from io import BytesIO
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="간편 교대 매매 분석기 Pro+",
+    page_title="간편 교대 매매 분석기 Pro",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (종목별 잔고 요약 & 계좌 현황판 연동)")
+st.subheader("📈 간편 교대 매매 시스템 (종목 잔고 현황판 연동)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -334,27 +334,37 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 💼 [대안 2번 적용] 수동 입력 기반 '내 계좌 잔고 현황판' (에러 없음 & 100% 정확)
-        with st.expander("💼 [자산 관리] 내 계좌 실제 잔고 현황판 (수동 입력)", expanded=True):
-            col_ac1, col_ac2, col_ac3 = st.columns(3)
-            with col_ac1:
-                real_stock_val = st.number_input("내 주식 총 평가금액 (원)", min_value=0, value=27000000, step=1000000, format="%d")
-            with col_ac2:
-                real_cash_val = st.number_input("현재 예수금 / 안전금고 (원)", min_value=0, value=3000000, step=500000, format="%d")
-            with col_ac3:
-                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                st.caption("증권사 앱 잔고를 그대로 입력하세요.")
+        # 💼 [수동 입력 + 종목별 보유 잔고 현황판]
+        with st.expander("💼 [자산 관리] 내 계좌 종목별 잔고 현황판 (수동 입력 & 실시간 합계)", expanded=True):
+            st.caption("내가 보유한 종목들의 수량을 직접 입력하면, 현재 조회 중인 종목가격을 반영하여 실시간 총자산과 합계가 계산됩니다.")
+            
+            col_h1, col_h2 = st.columns(2)
+            with col_h1:
+                lev_qty = st.number_input("KODEX 코스닥150레버리지 보유 수량 (주)", min_value=0, value=5000, step=100)
+                lev_price_input = st.number_input("레버리지 기준 적용 단가 / 현재가 (원)", min_value=0, value=int(s['B1']) if stock_code == "233740" else 10000, step=100)
+            with col_h2:
+                sam_qty = st.number_input("삼성전자 보유 수량 (주)", min_value=0, value=4, step=1)
+                sam_price_input = st.number_input("삼성전자 기준 적용 단가 / 현재가 (원)", min_value=0, value=70000 if stock_code != "005930" else int(s['B1']), step=500)
 
-            total_real_asset = real_stock_val + real_cash_val
-            real_stock_w = (real_stock_val / total_real_asset) * 100 if total_real_asset > 0 else 0
-            real_cash_w = (real_cash_val / total_real_asset) * 100 if total_real_asset > 0 else 0
+            safe_cash = st.number_input("고정 안전금고 현금 / 예수금 (원)", min_value=0, value=3000000, step=500000, format="%d")
 
-            rc1, rc2, rc3 = st.columns(3)
-            rc1.metric("실제 주식 평가금", f"{real_stock_val:,}원", f"{real_stock_w:.1f}%")
-            rc2.metric("보유 현금/예수금", f"{real_cash_val:,}원", f"{real_cash_w:.1f}%")
-            rc3.metric("내 계좌 총자산", f"{total_real_asset:,}원")
+            # 종목별 평가금액 계산
+            lev_eval = lev_qty * (int(s['B1']) if stock_code == "233740" else lev_price_input)
+            sam_eval = sam_qty * (int(s['B1']) if stock_code == "005930" else sam_price_input)
+            total_stock_eval = lev_eval + sam_eval
+            total_account_asset = total_stock_eval + safe_cash
 
-            st.progress(real_stock_w / 100.0, text=f"실제 계좌 주식 비중: {real_stock_w:.1f}% / 현금 비중: {real_cash_w:.1f}%")
+            stock_weight = (total_stock_eval / total_account_asset) * 100 if total_account_asset > 0 else 0
+            cash_weight = (safe_cash / total_account_asset) * 100 if total_account_asset > 0 else 0
+
+            st.markdown("---")
+            rc1, rc2, rc3, rc4 = st.columns(4)
+            rc1.metric("레버리지 평가금", f"{lev_eval:,}원")
+            rc2.metric("삼성전자 평가금", f"{sam_eval:,}원")
+            rc3.metric("주식 총 평가금액", f"{total_stock_eval:,}원", f"{stock_weight:.1f}%")
+            rc4.metric("내 계좌 총자산", f"{total_account_asset:,}원")
+
+            st.progress(stock_weight / 100.0, text=f"포트폴리오 주식 비중: {stock_weight:.1f}% / 현금 비중: {cash_weight:.1f}%")
 
         # 핵심 가격 요약 카드
         c1, c2, c3, c4 = st.columns(4)
