@@ -22,9 +22,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (레버리지 7단계 매수 ⇄ 마이너스 회복 익절)")
+st.subheader("📈 간편 교대 매매 시스템 (안전금고 현금 비중 대시보드 연동)")
 
-# 네이버 금융 일별 시세 크롤링 함수 (FinanceDataReader 대안)
+# 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
 def get_naver_stock_data(code, count=1250):
     url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count={count}&requestType=0"
@@ -39,7 +39,6 @@ def get_naver_stock_data(code, count=1250):
         
         data = []
         for item in item_list:
-            # data 속성 예시: "20261029|10000|10200|9900|10100|150000" (날짜, 시가, 고가, 저가, 종가, 거래량)
             vals = item.get('data').split('|')
             if len(vals) >= 6:
                 dt = datetime.strptime(vals[0], '%Y%m%d').strftime('%Y-%m-%d')
@@ -62,13 +61,13 @@ def get_naver_stock_data(code, count=1250):
     except Exception as e:
         return None
 
-# 상단 입력창 (기본값: KODEX 코스닥150레버리지 233740)
+# 상단 입력창 및 자산 커스텀 설정 탭
 col_in1, col_in2 = st.columns([2, 1])
 with col_in1:
     user_input = st.text_input(
         "🔍 종목코드(6자리) 입력",
         value="233740",
-        placeholder="예: 233740 또는 005930"
+        placeholder="예: 233740"
     ).strip()
 with col_in2:
     years_back = st.selectbox("조회 기간", options=[1, 2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
@@ -114,7 +113,7 @@ def style_table(df_target, df_full):
                 try:
                     v = float(val)
                     vmin, vmax = col_bounds.get(col_name, (0, 1))
-                    ratio = 0.0 if vmax == vmin else max(0.0, min(1.0, (v - vmin) / (vmax - vmin)))
+                    ratio = 0.0 if vmax == vmin else max(0.0, min(1.0, (v - vmin) / (vmax - vmax)))
                     r = int(255 - ratio * 35); g = int(240 - ratio * 160); b = int(240 - ratio * 160)
                     styles[idx] = f'background-color: #{r:02x}{g:02x}{b:02x}; color: {"#FFFFFF" if ratio > 0.5 else "#222222"}; font-weight: {"bold" if ratio > 0.4 else "normal"}; padding: 2px 6px; border-radius: 8px;'
                 except:
@@ -179,55 +178,67 @@ def calculate_indicator_sheet(df_raw):
             sig = "🔥 7차 매수 (풀베팅 / 누적 100%)"
             invest_pct = "레버리지 100% (2,700만)"
             cash_pct = "현금 300만 (안전금고)"
+            invest_ratio = 1.0
         elif s_val <= -35:
             sig = "🚨 6차 매수 (누적 85%)"
             invest_pct = "레버리지 85%"
             cash_pct = "현금 300만 (안전금고)"
+            invest_ratio = 0.85
         elif s_val <= -25:
             sig = "⚠️ 5차 매수 (누적 65%)"
             invest_pct = "레버리지 65%"
             cash_pct = "현금 300만 (안전금고)"
+            invest_ratio = 0.65
         elif s_val <= -18:
             sig = "⚠️ 4차 매수 (누적 45%)"
             invest_pct = "레버리지 45%"
             cash_pct = "현금 300만 (안전금고)"
+            invest_ratio = 0.45
         elif s_val <= -12:
             sig = "🔍 3차 매수 (누적 30%)"
             invest_pct = "레버리지 30%"
             cash_pct = "현금 300만 (안전금고)"
+            invest_ratio = 0.30
         elif s_val <= -7:
             sig = "🔍 2차 매수 (누적 15%)"
             invest_pct = "레버리지 15%"
             cash_pct = "현금 300만 (안전금고)"
+            invest_ratio = 0.15
         elif s_val <= -3:
             sig = "🔍 1차 매수 (5%)"
             invest_pct = "레버리지 5%"
             cash_pct = "현금 300만 (안전금고)"
-        # 마이너스 회복 구간 5분할 익절 (-35 ~ 0)
+            invest_ratio = 0.05
         elif s_val >= 0:
             sig = "🔥 5차 최종익절 (전량 현금화 완료)"
             invest_pct = "레버리지 0% (현금 100%)"
             cash_pct = "현금 300만 포함 총 3,000만+"
+            invest_ratio = 0.0
         elif s_val >= -5:
             sig = "✨ 4차 익절 (누적 80% 현금화)"
             invest_pct = "레버리지 20% 잔여"
             cash_pct = "현금 80%"
+            invest_ratio = 0.20
         elif s_val >= -15:
             sig = "✨ 3차 익절 (누적 60% 현금화)"
             invest_pct = "레버리지 40% 잔여"
             cash_pct = "현금 60%"
+            invest_ratio = 0.40
         elif s_val >= -25:
             sig = "✨ 2차 익절 (누적 40% 현금화)"
             invest_pct = "레버리지 60% 잔여"
             cash_pct = "현금 40%"
+            invest_ratio = 0.60
         elif s_val >= -35:
             sig = "✨ 1차 익절 (누적 20% 현금화)"
             invest_pct = "레버리지 80% 잔여"
             cash_pct = "현금 20%"
+            invest_ratio = 0.80
         else:
             sig = "중립 대기 구간"
             invest_pct = "기존 비중 유지"
             cash_pct = "현금 300만 (안전금고)"
+            invest_ratio = 0.50
 
         d_cur = pd.Timestamp(dates[i])
         w_slice = closes[:i+1][pd.to_datetime(dates[:i+1]) >= (d_cur - pd.DateOffset(years=1))]
@@ -254,6 +265,7 @@ def calculate_indicator_sheet(df_raw):
         'B1': int(closes[-1]), 'C1': int(vols[-1]), 'cur_chg': chg[-1] * 100,
         'MM': mm_list[-1], 'PM': pm_list[-1], 'LM': lm_list[-1], 'S': s_list[-1],
         'current_signal': buy_signals[-1], 'invest_pct': invest_pct, 'cash_pct': cash_pct,
+        'invest_ratio': invest_ratio,
         'state': "상승 파동 중" if state == 'UP' else "하락 파동 중"
     }
     return df_out, summary
@@ -261,7 +273,7 @@ def calculate_indicator_sheet(df_raw):
 # 데이터 로드 처리
 if stock_code:
     days_count = years_back * 250
-    with st.spinner(f"[{stock_name} ({stock_code})] 네이버 금융에서 실시간 데이터를 불러오는 중입니다..."):
+    with st.spinner(f"[{stock_name} ({stock_code})] 네이버 금융에서 데이터를 불러오는 중입니다..."):
         raw_df = get_naver_stock_data(stock_code, count=days_count)
 
     if raw_df is not None and not raw_df.empty:
@@ -291,6 +303,28 @@ if stock_code:
             </p>
         </div>
         """, unsafe_allow_html=True)
+
+        # 💡 [신규 추가] 안전금고 연동형 실시간 현금 비중 & 총자산 대시보드
+        with st.expander("💼 [자산 관리] 안전금고 현금 비중 및 총자산 시뮬레이터", expanded=True):
+            col_as1, col_as2 = st.columns(2)
+            with col_as1:
+                user_seed = st.number_input("내 총 시드머니 설정 (원)", min_value=1000000, value=30000000, step=1000000, format="%d")
+            with col_as2:
+                user_safe_cash = st.number_input("고정 안전금고 현금 (원)", min_value=0, value=3000000, step=500000, format="%d")
+            
+            # 자산 배분 계산
+            active_pool = max(0, user_seed - user_safe_cash)
+            current_invest_amt = int(active_pool * s['invest_ratio'])
+            current_idle_cash = user_seed - current_invest_amt # 안전금고 + 미투자 현금
+            stock_weight = (current_invest_amt / user_seed) * 100 if user_seed > 0 else 0
+            cash_weight = (current_idle_cash / user_seed) * 100 if user_seed > 0 else 0
+
+            c_w1, c_w2, c_w3 = st.columns(3)
+            c_w1.metric("총 자산 규모", f"{user_seed:,}원")
+            c_w2.metric("주식 투입 금액 (현재 비중)", f"{current_invest_amt:,}원", f"{stock_weight:.1f}%")
+            c_w3.metric("총 대기 현금 (안전금고 포함)", f"{current_idle_cash:,}원", f"{cash_weight:.1f}%")
+
+            st.progress(stock_weight / 100.0, text=f"포트폴리오 주식 비중: {stock_weight:.1f}% / 현금 비중: {cash_weight:.1f}%")
 
         # 핵심 가격 요약 카드
         c1, c2, c3, c4 = st.columns(4)
