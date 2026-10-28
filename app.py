@@ -334,11 +334,26 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 상단 메인 페이지는 핵심 지표 카드만 깔끔하게 유지
+        # 초기화 및 실시간 총자산 계산 (상단 카드 연동용)
+        if 'portfolio_items' not in st.session_state:
+            st.session_state.portfolio_items = [
+                {"id": 1, "name": "KODEX 코스닥150레버리지", "qty": 5000, "price": int(s['B1']) if stock_code == "233740" else 10000},
+                {"id": 2, "name": "삼성전자", "qty": 4, "price": 70000 if stock_code != "005930" else int(s['B1'])}
+            ]
+        
+        top_total_stock_eval = 0
+        for item in st.session_state.portfolio_items:
+            p = int(s['B1']) if (stock_code in item["name"] or stock_name in item["name"]) else item["price"]
+            top_total_stock_eval += item["qty"] * p
+        
+        top_account_cash = 3000000 # 기본 예수금/현금 가정
+        top_total_asset = top_total_stock_eval + top_account_cash
+
+        # 핵심 가격 요약 카드 (포트폴리오 비중 대신 '내 계좌 총자산' 배치)
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("현재가 (B1)", f"{s['B1']:,}원", f"{s['cur_chg']:+.2f}%")
         c2.metric("S값 지표", f"S: {s['S']}", f"MM:{s['MM']} / LM:{s['LM']}")
-        c3.metric("포트폴리오 비중", s['invest_pct'])
+        c3.metric("내 계좌 총자산", f"{top_total_asset:,}원", f"주식 {top_total_stock_eval:,}원")
         c4.metric("매매 모드", s['state'])
 
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 실시간 매매 가이드", "📝 매매일지 & 내 계좌 총자산", "💾 엑셀 다운로드"])
