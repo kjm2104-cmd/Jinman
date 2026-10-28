@@ -7,7 +7,7 @@ from io import BytesIO
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="간편 교대 매매 분석기 Pro++",
+    page_title="간편 교대 매매 분석기 Pro+++",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -22,9 +22,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 Pro++ (종목별 자산 분리 & 내역 삭제 기능)")
+st.subheader("📈 간편 교대 매매 시스템 Pro+++ (다종목 수량 & 자산 완벽 분리)")
 
-# 네이버 금융 일별 시세 크롤링 함수
+# 네이버 금융 일별 시세 크롤링 함수 (종목코드별 동적 조회)
 @st.cache_data(ttl=3600)
 def get_naver_stock_data(code, count=1250):
     url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count={count}&requestType=0"
@@ -65,15 +65,15 @@ def get_naver_stock_data(code, count=1250):
 col_in1, col_in2 = st.columns([2, 1])
 with col_in1:
     user_input = st.text_input(
-        "🔍 종목코드(6자리) 입력",
+        "🔍 조회할 종목코드(6자리) 입력",
         value="233740",
-        placeholder="예: 233740"
+        placeholder="예: 233740 또는 005930"
     ).strip()
 with col_in2:
     years_back = st.selectbox("조회 기간", options=[1, 2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
 
 stock_code = user_input.zfill(6) if user_input.isdigit() else "233740"
-stock_name = "KODEX 코스닥150레버리지" if stock_code == "233740" else f"종목코드 {stock_code}"
+stock_name = "KODEX 코스닥150레버리지" if stock_code == "233740" else ("삼성전자" if stock_code == "005930" else f"종목코드 {stock_code}")
 
 def r10(val):
     return int(np.floor(val / 10.0 + 0.5) * 10)
@@ -303,23 +303,23 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 💼 [종목별 독립 분리된 자산 관리 대시보드]
-        with st.expander(f"💼 [자산 관리] '{stock_name} ({stock_code})' 보유 수량 및 실시간 총자산 대시보드", expanded=True):
+        # 💼 [다종목 분리 연동형 총자산 대시보드]
+        with st.expander(f"💼 [자산 관리] '{stock_name} ({stock_code})' 수량 및 총자산 대시보드", expanded=True):
             col_as1, col_as2 = st.columns(2)
             with col_as1:
                 user_safe_cash = st.number_input("고정 안전금고 현금 (원)", min_value=0, value=3000000, step=500000, format="%d", key="safe_cash_input")
             with col_as2:
-                sync_mode = st.checkbox("현재 조회 중인 종목 매매일지 수량만 연동", value=True, help="현재 화면에 입력된 종목코드와 일치하는 매매일지 내역만 합산합니다.")
+                only_current_stock = st.checkbox("현재 조회 중인 종목 수량만 반영", value=True, help="체크 시 현재 화면에 입력된 종목(코드 또는 이름)의 매매일지 수량만 합산합니다.")
 
-            # 현재 조회 중인 종목(stock_code 또는 stock_name)과 일치하는 매매일지만 필터링하여 수량 계산
+            # 매매일지 기반 종목별 보유 주식 수량 계산
             total_shares = 0
             if 'trade_logs' in st.session_state and st.session_state.trade_logs:
                 for lg in st.session_state.trade_logs:
                     g = lg.get('구분', '')
                     item_name = str(lg.get('종목', ''))
                     
-                    # 현재 종목코드나 종목명이 포함된 내역만 연동
-                    if sync_mode and (stock_code not in item_name and stock_name not in item_name):
+                    # 현재 조회 중인 종목과 일치하는 내역만 필터링
+                    if only_current_stock and (stock_code not in item_name and stock_name not in item_name):
                         continue
 
                     try:
@@ -332,17 +332,17 @@ if stock_code:
                     elif '익절' in g or '청산' in g:
                         total_shares = max(0, total_shares - qty)
 
-            # 주식 평가금액 = 현재가(B1) * 현재 종목 보유 수량
-            current_stock_value = s['B1'] * total_shares if sync_mode else int((30000000 - user_safe_cash) * s['invest_ratio'])
+            # 주식 평가금액 = 현재가(B1) * 해당 종목 보유 수량
+            current_stock_value = s['B1'] * total_shares
             total_net_asset = current_stock_value + user_safe_cash
             stock_weight = (current_stock_value / total_net_asset) * 100 if total_net_asset > 0 else 0
             cash_weight = (user_safe_cash / total_net_asset) * 100 if total_net_asset > 0 else 0
 
             c_w1, c_w2, c_w3, c_w4 = st.columns(4)
-            c_w1.metric("현재 보유 주식 수량", f"{total_shares:,}주")
+            c_w1.metric(f"{stock_name} 보유 수량", f"{total_shares:,}주")
             c_w2.metric("주식 평가금액", f"{current_stock_value:,}원", f"{stock_weight:.1f}%")
             c_w3.metric("안전금고 현금", f"{user_safe_cash:,}원", f"{cash_weight:.1f}%")
-            c_w4.metric("총 자산 평가액", f"{total_net_asset:,}원")
+            c_w4.metric("종목 총자산 평가액", f"{total_net_asset:,}원")
 
             st.progress(stock_weight / 100.0, text=f"({stock_name}) 총자산 기준 주식 비중: {stock_weight:.1f}% / 현금 비중: {cash_weight:.1f}%")
 
@@ -423,7 +423,6 @@ if stock_code:
                 st.markdown("---")
                 st.markdown("##### 📋 저장된 매매일지 내역 및 개별 삭제")
                 
-                # 삭제할 인덱스 선택 UI
                 log_df = pd.DataFrame(st.session_state.trade_logs)
                 st.dataframe(log_df, use_container_width=True)
 
