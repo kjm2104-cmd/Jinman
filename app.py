@@ -4,8 +4,6 @@ import numpy as np
 import FinanceDataReader as fdr
 from datetime import datetime, timedelta
 from io import BytesIO
-from openpyxl.formatting.rule import ColorScaleRule
-from openpyxl.utils import get_column_letter
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
@@ -100,11 +98,11 @@ def style_table(df_target, df_full):
                 except:
                     pass
             elif col_name == '매수신호(레버리지/인버스)':
-                if '10차' in str(val): styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
-                elif '8차' in str(val) or '9차' in str(val): styles[idx] = 'background-color: #D32F2F; color: #FFFFFF; font-weight: bold;'
-                elif '6차' in str(val) or '7차' in str(val): styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: bold;'
-                elif '4차' in str(val) or '5차' in str(val): styles[idx] = 'background-color: #FFE0B2; color: #E65100; font-weight: bold;'
-                elif '1차' in str(val) or '2차' in str(val) or '3차' in str(val): styles[idx] = 'background-color: #FFF9C4; color: #F57F17; font-weight: bold;'
+                if '15차' in str(val) or '14차' in str(val): styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
+                elif '11차' in str(val) or '12차' in str(val) or '13차' in str(val): styles[idx] = 'background-color: #D32F2F; color: #FFFFFF; font-weight: bold;'
+                elif '8차' in str(val) or '9차' in str(val) or '10차' in str(val): styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: bold;'
+                elif '5차' in str(val) or '6차' in str(val) or '7차' in str(val): styles[idx] = 'background-color: #FFE0B2; color: #E65100; font-weight: bold;'
+                elif '1차' in str(val) or '2차' in str(val) or '3차' in str(val) or '4차' in str(val): styles[idx] = 'background-color: #FFF9C4; color: #F57F17; font-weight: bold;'
                 elif '스위칭' in str(val): styles[idx] = 'background-color: #E3F2FD; color: #0D47A1; font-weight: bold;'
             elif col_name in cols_grad:
                 try:
@@ -168,26 +166,67 @@ def calculate_indicator_sheet(df_raw):
         lm = int(round((p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
         s_val = lm - mm
 
-        if s_val <= -50:
-            sig = "🔥 10차 풀베팅 (바닥)"
+        # 15분할 점증형 매수 (4% 시작 ~ 아래로 갈수록 비중 확대)
+        if s_val <= -55:
+            sig = "🔥 15차 풀베팅 (바닥)"
             invest_pct = "레버리지 100% (3,000만)"
             cash_pct = "현금 0원"
-        elif s_val <= -40:
-            sig = "🚨 8~9차 매수"
-            invest_pct = "레버리지 80~90%"
-            cash_pct = "현금 10~20%"
-        elif s_val <= -30:
-            sig = "⚠️ 6~7차 매수"
-            invest_pct = "레버리지 60~70%"
-            cash_pct = "현금 30~40%"
-        elif s_val <= -20:
-            sig = "⚠️ 4~5차 매수"
-            invest_pct = "레버리지 40~50%"
-            cash_pct = "현금 50~60%"
-        elif s_val <= -10:
-            sig = "🔍 1~3차 입질"
-            invest_pct = "레버리지 10~30%"
-            cash_pct = "현금 70~90%"
+        elif s_val <= -51:
+            sig = "🚨 14차 매수 (10%)"
+            invest_pct = "레버리지 98%"
+            cash_pct = "현금 2%"
+        elif s_val <= -47:
+            sig = "🚨 13차 매수 (10%)"
+            invest_pct = "레버리지 88%"
+            cash_pct = "현금 12%"
+        elif s_val <= -43:
+            sig = "🚨 12차 매수 (9%)"
+            invest_pct = "레버리지 78%"
+            cash_pct = "현금 22%"
+        elif s_val <= -39:
+            sig = "⚠️ 11차 매수 (9%)"
+            invest_pct = "레버리지 69%"
+            cash_pct = "현금 31%"
+        elif s_val <= -35:
+            sig = "⚠️ 10차 매수 (8%)"
+            invest_pct = "레버리지 60%"
+            cash_pct = "현금 40%"
+        elif s_val <= -31:
+            sig = "⚠️ 9차 매수 (8%)"
+            invest_pct = "레버리지 52%"
+            cash_pct = "현금 48%"
+        elif s_val <= -27:
+            sig = "⚠️ 8차 매수 (7%)"
+            invest_pct = "레버리지 44%"
+            cash_pct = "현금 56%"
+        elif s_val <= -23:
+            sig = "⚠️ 7차 매수 (7%)"
+            invest_pct = "레버리지 37%"
+            cash_pct = "현금 63%"
+        elif s_val <= -19:
+            sig = "🔍 6차 매수 (6%)"
+            invest_pct = "레버리지 30%"
+            cash_pct = "현금 70%"
+        elif s_val <= -15:
+            sig = "🔍 5차 매수 (6%)"
+            invest_pct = "레버리지 24%"
+            cash_pct = "현금 76%"
+        elif s_val <= -12:
+            sig = "🔍 4차 매수 (5%)"
+            invest_pct = "레버리지 18%"
+            cash_pct = "현금 82%"
+        elif s_val <= -9:
+            sig = "🔍 3차 매수 (5%)"
+            invest_pct = "레버리지 13%"
+            cash_pct = "현금 87%"
+        elif s_val <= -6:
+            sig = "🔍 2차 매수 (4%)"
+            invest_pct = "레버리지 8%"
+            cash_pct = "현금 92%"
+        elif s_val <= -3:
+            sig = "🔍 1차 입질 (4%)"
+            invest_pct = "레버리지 4%"
+            cash_pct = "현금 96%"
         elif s_val >= 20:
             sig = "🔄 인버스 스위칭"
             invest_pct = "인버스 50% (최대 1,500만)"
@@ -256,26 +295,31 @@ if stock_code:
         c3.metric("목표 포트폴리오 비중", s['invest_pct'])
         c4.metric("안전 대기 현금", s['cash_pct'])
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 10분할 매매 표", "🎯 매수/매도 가이드", "📝 매매일지 (영구 저장)", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 15분할 매매 표", "🎯 매수/매도 가이드", "📝 매매일지 (영구 저장)", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 S값 기준 [1차 입질 ~ 10차 풀베팅] 및 [인버스 50% 제한 스위칭] 자동 반영")
+            st.caption("📈 S값 기준 [15분할 점증형 매수 (4% 시작 ~ 비중 확대)] 및 [인버스 50% 제한 스위칭] 자동 반영")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
         with tab2:
-            st.markdown("##### 📉 [1단계] 하락장 10분할 매수 기준표 (S값 연동)")
+            st.markdown("##### 📉 [1단계] 하락장 15분할 점증형 매수 기준표 (S값 연동)")
             buy_guide_data = [
-                {"단계": "1차 입질", "S값 조건": "S ≤ -5", "투입 비중": "10% (300만)", "설명": "하락 초입 가볍게 진입"},
-                {"단계": "2차 매수", "S값 조건": "S ≤ -10", "투입 비중": "10% (300만)", "설명": "조정 시 추가 비중 확대"},
-                {"단계": "3차 매수", "S값 조건": "S ≤ -15", "투입 비중": "10% (300만)", "설명": "분할 매집 본격화"},
-                {"단계": "4차 매수", "S값 조건": "S ≤ -20", "투입 비중": "10% (300만)", "설명": "누적 40% 투입"},
-                {"단계": "5차 매수", "S값 조건": "S ≤ -25", "투입 비중": "10% (300만)", "설명": "하락 공포 중간 구간"},
-                {"단계": "6차 매수", "S값 조건": "S ≤ -30", "투입 비중": "10% (300만)", "설명": "적극적 물량 모으기"},
-                {"단계": "7차 매수", "S값 조건": "S ≤ -35", "투입 비중": "10% (300만)", "설명": "지하 공포 구간"},
-                {"단계": "8차 매수", "S값 조건": "S ≤ -40", "투입 비중": "10% (300만)", "설명": "과감한 저점 비중 실기"},
-                {"단계": "9차 매수", "S값 조건": "S ≤ -45", "투입 비중": "10% (300만)", "설명": "바닥 다지기 막바지"},
-                {"단계": "10차 풀베팅", "S값 조건": "S ≤ -50", "투입 비중": "10% (300만)", "설명": "최종 바닥 (레버리지 100%)"},
+                {"단계": "1차 입질", "S값 조건": "S ≤ -3", "투입 비중": "4% (120만)", "설명": "하락 초입 가볍게 진입"},
+                {"단계": "2차 매수", "S값 조건": "S ≤ -6", "투입 비중": "4% (120만)", "설명": "조정 시 추가 비중 확대"},
+                {"단계": "3차 매수", "S값 조건": "S ≤ -9", "투입 비중": "5% (150만)", "설명": "비중 예열 시작"},
+                {"단계": "4차 매수", "S값 조건": "S ≤ -12", "투입 비중": "5% (150만)", "설명": "분할 매집 체계 가동"},
+                {"단계": "5차 매수", "S값 조건": "S ≤ -15", "투입 비중": "6% (180만)", "설명": "초반 안정 방어막"},
+                {"단계": "6차 매수", "S값 조건": "S ≤ -19", "투입 비중": "6% (180만)", "설명": "하락폭 심화 구간"},
+                {"단계": "7차 매수", "S값 조건": "S ≤ -23", "투입 비중": "7% (210만)", "설명": "본격적 수량 모으기"},
+                {"단계": "8차 매수", "S값 조건": "S ≤ -27", "투입 비중": "7% (210만)", "설명": "중반 반환점 접근"},
+                {"단계": "9차 매수", "S값 조건": "S ≤ -31", "투입 비중": "8% (240만)", "설명": "공포 속 비중 확대"},
+                {"단계": "10차 매수", "S값 조건": "S ≤ -35", "투입 비중": "8% (240만)", "설명": "굵직한 자금 투입"},
+                {"단계": "11차 매수", "S값 조건": "S ≤ -39", "투입 비중": "9% (270만)", "설명": "지하 공포 구간"},
+                {"단계": "12차 매수", "S값 조건": "S ≤ -43", "투입 비중": "9% (270만)", "설명": "과감한 덩치 키우기"},
+                {"단계": "13차 매수", "S값 조건": "S ≤ -47", "투입 비중": "10% (300만)", "설명": "극도의 공포 집중"},
+                {"단계": "14차 매수", "S값 조건": "S ≤ -51", "투입 비중": "10% (300만)", "설명": "바닥 다지기 막바지"},
+                {"단계": "15차 풀베팅", "S값 조건": "S ≤ -55", "투입 비중": "잔여 2% (60만)", "설명": "최종 바닥 (레버리지 100%)"},
             ]
             st.dataframe(pd.DataFrame(buy_guide_data), use_container_width=True)
 
@@ -320,7 +364,7 @@ if stock_code:
                     t_date = st.date_input("거래 일자", datetime.today())
                     t_종목 = st.text_input("종목명", value=f"{stock_name} ({stock_code})")
                 with col_f2:
-                    t_type = st.selectbox("매매 구분", ["레버리지 1~3차 매수", "레버리지 4~7차 매수", "레버리지 8~10차 매수", "레버리지 1~2차 매도(익절)", "레버리지 3~5차 매도(익절)", "인버스 스위칭 진입(50%)", "전량 청산 및 현금화"])
+                    t_type = st.selectbox("매매 구분", ["레버리지 1~5차 매수", "레버리지 6~10차 매수", "레버리지 11~15차 풀베팅", "레버리지 1~2차 매도(익절)", "레버리지 3~5차 매도(익절)", "인버스 스위칭 진입(50%)", "전량 청산 및 현금화"])
                     t_price = st.number_input("체결 가격 (원)", min_value=0, value=int(s['B1']), step=100)
                 
                 t_amt = st.number_input("투자 금액 (원)", min_value=0, value=3000000, step=100000)
