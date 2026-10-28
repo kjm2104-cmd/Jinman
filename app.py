@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import FinanceDataReader as fdr
+import requests
 from datetime import datetime, timedelta
 from io import BytesIO
 
@@ -24,50 +24,57 @@ st.markdown("""
 
 st.subheader("📈 간편 교대 매매 시스템 (레버리지 7단계 매수 ⇄ 마이너스 회복 익절)")
 
-# KRX 종목 리스트 캐싱
-@st.cache_data(ttl=86400)
-def get_krx_list():
+# 네이버 금융 일별 시세 크롤링 함수 (FinanceDataReader 대안)
+@st.cache_data(ttl=3600)
+def get_naver_stock_data(code, count=1250):
+    url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count={count}&requestType=0"
     try:
-        krx = fdr.StockListing('KRX')
-        if krx is not None and not krx.empty:
-            if 'Code' in krx.columns and 'Name' in krx.columns:
-                return krx[['Code', 'Name']]
-            elif 'Symbol' in krx.columns and 'Name' in krx.columns:
-                return krx.rename(columns={'Symbol': 'Code'})[['Code', 'Name']]
-        return pd.DataFrame()
-    except Exception:
-        return pd.DataFrame()
-
-krx_df = get_krx_list()
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+        if response.status_code != 200:
+            return None
+        
+        from xml.etree import ElementTree as ET
+        root = ET.fromstring(response.text)
+        item_list = root.findall('.//item')
+        
+        data = []
+        for item in item_list:
+            # data 속성 예시: "20261029|10000|10200|9900|10100|150000" (날짜, 시가, 고가, 저가, 종가, 거래량)
+            vals = item.get('data').split('|')
+            if len(vals) >= 6:
+                dt = datetime.strptime(vals[0], '%Y%m%d').strftime('%Y-%m-%d')
+                data.append({
+                    'Date': dt,
+                    'Open': float(vals[1]),
+                    'High': float(vals[2]),
+                    'Low': float(vals[3]),
+                    'Close': float(vals[4]),
+                    'Volume': float(vals[5])
+                })
+        
+        if not data:
+            return None
+            
+        df = pd.DataFrame(data)
+        df['Date'] = pd.to_datetime(df['Date'])
+        df.set_index('Date', inplace=True)
+        return df
+    except Exception as e:
+        return None
 
 # 상단 입력창 (기본값: KODEX 코스닥150레버리지 233740)
 col_in1, col_in2 = st.columns([2, 1])
 with col_in1:
     user_input = st.text_input(
-        "🔍 종목코드(6자리) 또는 종목명 입력",
+        "🔍 종목코드(6자리) 입력",
         value="233740",
-        placeholder="예: 삼성전자 005930"
+        placeholder="예: 233740 또는 005930"
     ).strip()
 with col_in2:
-    years_back = st.selectbox("조회 기간", options=[2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
+    years_back = st.selectbox("조회 기간", options=[1, 2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
 
-stock_code = user_input
-stock_name = user_input
-
-if krx_df is not None and not krx_df.empty:
-    krx_df['Code'] = krx_df['Code'].astype(str).str.zfill(6)
-    
-    if user_input.isdigit() and len(user_input) <= 6:
-        target_code = user_input.zfill(6)
-        match = krx_df[krx_df['Code'] == target_code]
-        if not match.empty:
-            stock_code = target_code
-            stock_name = str(match['Name'].iloc[0])
-    else:
-        match = krx_df[krx_df['Name'].str.contains(user_input, na=False)]
-        if not match.empty:
-            stock_code = str(match['Code'].iloc[0])
-            stock_name = str(match['Name'].iloc[0])
+stock_code = user_input.zfill(6) if user_input.isdigit() else "233740"
+stock_name = "KODEX 코스닥150레버리지" if stock_code == "233740" else f"종목코드 {stock_code}"
 
 def r10(val):
     return int(np.floor(val / 10.0 + 0.5) * 10)
@@ -117,17 +124,9 @@ def style_table(df_target, df_full):
     return df_target.style.apply(lambda row: color_styler(row.name, row), axis=1).format({'종가(B)': '{:,}', '중심선(D)': '{:,}', '거래량(E)': '{:,}', '거래비율(F)': '{:.2f}'}, na_rep="-")
 
 def calculate_indicator_sheet(df_raw):
-    df = df_raw.copy().reset_index(drop=True)
+    df = df_raw.copy().reset_index()
     
-    # 컬럼명 표준화 방어 코드
-    if 'Close' not in df.columns and '종가' in df.columns:
-        df.rename(columns={'종가': 'Close'}, inplace=True)
-    if 'Volume' not in df.columns and '거래량' in df.columns:
-        df.rename(columns={'거래량': 'Volume'}, inplace=True)
-    if 'Date' not in df.columns:
-        df.rename(columns={df.columns[0]: 'Date'}, inplace=True)
-
-    closes = pd.to_numeric(df['Close'], errors='coerce').fillna(method='ffill').values
+    closes = pd.to_numeric(df['Close'], errors='coerce').ffill().values
     vols = pd.to_numeric(df['Volume'], errors='coerce').fillna(0).values
     dates = pd.to_datetime(df['Date']).values
     n = len(closes)
@@ -261,15 +260,9 @@ def calculate_indicator_sheet(df_raw):
 
 # 데이터 로드 처리
 if stock_code:
-    start_dt = (datetime.today() - timedelta(days=365 * years_back)).strftime('%Y-%m-%d')
-    raw_df = None
-    try:
-        with st.spinner(f"[{stock_name} ({stock_code})] 실시간 데이터를 불러오는 중입니다..."):
-            raw_df = fdr.DataReader(stock_code, start_dt)
-            if raw_df is not None and not raw_df.empty:
-                raw_df = raw_df.reset_index()
-    except Exception as e:
-        st.error( 데이터를 불러오는 중 오류가 발생했습니다: {e} )
+    days_count = years_back * 250
+    with st.spinner(f"[{stock_name} ({stock_code})] 네이버 금융에서 실시간 데이터를 불러오는 중입니다..."):
+        raw_df = get_naver_stock_data(stock_code, count=days_count)
 
     if raw_df is not None and not raw_df.empty:
         df_result, s = calculate_indicator_sheet(raw_df)
@@ -394,4 +387,4 @@ if stock_code:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
     else:
-        st.error("종목 데이터를 찾을 수 없습니다. 6자리 종목코드나 정확한 종목명을 입력해 주세요.")
+        st.error("종목 데이터를 불러오지 못했습니다. 올바른 6자리 종목코드(예: 233740, 005930)를 입력해 주세요.")
