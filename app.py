@@ -15,7 +15,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 모바일 가독성 및 태그(Badge) 스타일링 CSS
 st.markdown("""
 <style>
     .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
@@ -26,7 +25,7 @@ st.markdown("""
 
 st.subheader("📈 간편 교대 매매 시스템 (구글 스프레드시트 실시간 연동)")
 
-# 🔗 구글 스프레드시트 연동 함수 (시트에서 데이터를 불러오고 저장하는 역할)
+# 🔗 구글 스프레드시트 연동 함수 (에러 상세 추적 버전)
 @st.cache_resource
 def get_gsheet_connection():
     scope = [
@@ -40,10 +39,11 @@ def get_gsheet_connection():
             client = gspread.authorize(creds)
             sheet_url = "https://docs.google.com/spreadsheets/d/14_iZl-8eS3nV7PW2JB7LSODbAE_Llf_DX0Do6ogBxes/edit?gid=0#gid=0"
             sheet = client.open_by_url(sheet_url).sheet1
-            return sheet
+            return sheet, None
+        else:
+            return None, "Streamlit Secrets에 'gcp_service_account' 설정이 없습니다."
     except Exception as e:
-        return None
-    return None
+        return None, str(e)
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -108,7 +108,6 @@ with st.form(key="search_form"):
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
         submit_search = st.form_submit_button("🔍 조회하기", use_container_width=True)
 
-# 입력값 파싱
 if user_input in name_to_code:
     stock_code = name_to_code[user_input]
     stock_name = user_input
@@ -321,7 +320,6 @@ def calculate_indicator_sheet(df_raw):
     }
     return df_out, summary
 
-# 데이터 로드 처리
 if stock_code:
     days_count = years_back * 250
     with st.spinner(f"[{stock_name} ({stock_code})] 네이버 금융에서 데이터를 불러오는 중입니다..."):
@@ -385,7 +383,6 @@ if stock_code:
             st.info("마이너스 회복 구간(-35 ~ 0) 진입 시 아래 S값 조건에 따라 단계별 현금화를 실행하세요.")
 
             current_s = float(s['S'])
-            
             def get_minus_status(min_s):
                 return "🟢 도달 완료 (실행)" if current_s >= min_s else "⚪ 대기 중"
 
@@ -401,23 +398,21 @@ if stock_code:
         with tab3:
             st.markdown("##### 📝 구글 스프레드시트 연동 매매일지 저장 및 최근 기록 요약")
             
-            sheet = get_gsheet_connection()
+            sheet, err_msg = get_gsheet_connection()
 
-            # 구글 시트에 저장된 기존 내역 불러와서 최근 요약 뷰어로 보여주기
             if sheet is not None:
                 try:
                     all_rows = sheet.get_all_records()
                     if all_rows:
                         st.markdown("📋 **[최근 매매 기록 요약]** (구글 시트 연동 최신순)")
                         df_logs = pd.DataFrame(all_rows)
-                        # 최근 기록이 위로 오도록 역순 정렬 및 최대 5~10개 표시
                         st.dataframe(df_logs.iloc[::-1].head(10), use_container_width=True)
                     else:
                         st.info("💡 아직 구글 스프레드시트에 기록된 매매일지가 없습니다. 아래 폼에서 첫 기록을 남겨보세요!")
                 except Exception as e:
-                    st.info("구글 시트 연동 데이터를 불러오는 중입니다...")
+                    st.error(f"구글 시트 데이터를 읽어오는 중 에러 발생: {e}")
             else:
-                st.warning("⚠️ 구글 시트 연결 대기 중 (Secrets 또는 공유 설정을 확인해 주세요)")
+                st.error(f"❌ 구글 시트 연결 실패 에러 내용: {err_msg}")
 
             st.markdown("---")
             st.markdown("##### ✍️ 새로운 매매 내역 기록하기")
@@ -437,15 +432,15 @@ if stock_code:
                 
                 submitted = st.form_submit_button("구글 시트에 매매일지 저장하기")
                 if submitted:
-                    row_data = [str(t_date), t_종목, t_type, str(t_qty), f"{t_price:,}원", f"{t_amt:,}원", t_memo]
                     if sheet is not None:
                         try:
+                            row_data = [str(t_date), t_종목, t_type, str(t_qty), f"{t_price:,}원", f"{t_amt:,}원", t_memo]
                             sheet.append_row(row_data)
-                            st.success("✨ 구글 스프레드시트에 매매일지가 실시간으로 안전하게 저장되었습니다! 화면을 새로고침하면 최신 내역이 요약에 반영됩니다.")
+                            st.success("✨ 구글 스프레드시트에 매매일지가 실시간으로 안전하게 저장되었습니다!")
                         except Exception as e:
-                            st.error(f"구글 시트 저장 중 오류가 발생했습니다: {e}")
+                            st.error(f"구글 시트 저장 중 오류 발생: {e}")
                     else:
-                        st.warning("구글 시트 연결 정보를 불러오지 못했습니다. Streamlit Secrets 설정을 확인해 주세요.")
+                        st.error(f"구글 시트 연결이 되어있지 않아 저장할 수 없습니다. (원인: {err_msg})")
 
         with tab4:
             output = BytesIO()
