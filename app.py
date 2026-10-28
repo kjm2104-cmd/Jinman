@@ -9,7 +9,7 @@ from openpyxl.utils import get_column_letter
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="울티마(U-Point) 모바일 분석기",
+    page_title="모바일 분석기",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -24,7 +24,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 울티마(U-Point) 모바일 분석기")
+st.subheader("📈 모바일 분석기")
 
 # KRX 종목 리스트 캐싱
 @st.cache_data(ttl=86400)
@@ -37,13 +37,13 @@ def get_krx_list():
 
 krx_df = get_krx_list()
 
-# 상단 입력창
+# 상단 입력창 (기본값: KODEX 코스닥150레버리지 233740)
 col_in1, col_in2 = st.columns([2, 1])
 with col_in1:
     user_input = st.text_input(
         "🔍 종목코드(6자리) 또는 종목명 입력",
-        value="137400",
-        placeholder="예: 137400, 피엔티, 에이스테크, 005930"
+        value="233740",
+        placeholder="예: 233740, KODEX 코스닥150레버리지, 005930"
     ).strip()
 with col_in2:
     years_back = st.selectbox("조회 기간", options=[2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
@@ -67,7 +67,7 @@ def r10(val):
 def style_table(df_target, df_full):
     """
     1. 종가(B), 등락률(C): 전일 대비 상승(붉은색), 하락(파란색), 보합(검은색)
-    2. S값 및 MM, PM, LM, RM: 시인성 높은 그라데이션 및 S값 강조
+    2. S값 및 MM, PM, LM, RM: 붉은색 그라데이션 히트맵 (S값 특별 강조)
     """
     cols_grad = ['MM', 'PM', 'LM', 'RM']
     col_bounds = {}
@@ -78,7 +78,6 @@ def style_table(df_target, df_full):
     def color_styler(row_idx, row):
         styles = [''] * len(row)
         
-        # 전일 종가와 비교하기 위한 직전 행 가격 구하기 (df_full 기준)
         curr_close = row['종가(B)']
         prev_close = None
         if row_idx > 0:
@@ -87,7 +86,7 @@ def style_table(df_target, df_full):
         for idx, col_name in enumerate(row.index):
             val = row[col_name]
             
-            # ① 종가(B) 및 등락률(C): 상승 붉은색, 하락 파란색, 보합 검은색
+            # ① 종가(B) 및 등락률(C): 전일 대비 상승 붉은색, 하락 파란색, 보합 검은색
             if col_name in ['종가(B)', '등락률(C)']:
                 if prev_close is not None:
                     if curr_close > prev_close:
@@ -99,7 +98,7 @@ def style_table(df_target, df_full):
                 else:
                     styles[idx] = 'color: #111111;'
 
-            # ② 특히 중요하게 보시는 S값 컬럼 스타일링
+            # ② S값 컬럼 스타일링 (눈에 잘 띄도록 강조)
             elif col_name == 'S':
                 try:
                     s_num = float(val)
@@ -130,7 +129,6 @@ def style_table(df_target, df_full):
                     pass
         return styles
 
-    # 행 단위로 인덱스를 전달하여 스타일 적용
     return (
         df_target.style
         .apply(lambda row: color_styler(row.name, row), axis=1)
@@ -375,7 +373,7 @@ if stock_code:
         ])
 
         with tab1:
-            st.caption("📈 종가 및 등락률: 상승(붉은색) / 하락(파란색) / 보합(검은색) | S값과 3M 지표 강조 스타일 적용")
+            st.caption("📈 종가 및 등락률: 전일 대비 상승(붉은색) / 하락(파란색) / 보합(검은색) | S값 및 3M 지표 강조")
             df_rev = df_result.iloc[::-1]
             styled_all = style_table(df_rev, df_result)
             st.dataframe(styled_all, use_container_width=True, height=520)
@@ -427,7 +425,7 @@ if stock_code:
             st.download_button(
                 label=f"📥 {stock_name}({stock_code}) 색상 적용 엑셀(.xlsx) 다운로드",
                 data=output.getvalue(),
-                file_name=f"울티마_{stock_name}_{stock_code}_{datetime.today().strftime('%Y%m%d')}.xlsx",
+                file_name=f"모바일분석기_{stock_name}_{stock_code}_{datetime.today().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
     else:
