@@ -1,7 +1,0 @@
-streamlit
-pandas
-numpy
-requests
-openpyxl
-gspread
-google-auth
