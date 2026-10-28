@@ -42,7 +42,7 @@ col_in1, col_in2 = st.columns([2, 1])
 with col_in1:
     user_input = st.text_input(
         "🔍 종목코드(6자리) 또는 종목명 입력",
-        value="233740",
+        value="005930",
         placeholder="예: 005930, 삼성전자, 에이스테크, 005930"
     ).strip()
 with col_in2:
