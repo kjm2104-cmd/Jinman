@@ -9,7 +9,7 @@ from openpyxl.utils import get_column_letter
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="울티마(U-Point) 완벽 분석기",
+    page_title="울티마(U-Point) 모바일 분석기",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -24,7 +24,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 울티마(U-Point) 모바일 전용 분석기")
+st.subheader("📈 울티마(U-Point) 모바일 분석기")
 
 # KRX 종목 리스트 캐싱
 @st.cache_data(ttl=86400)
@@ -46,11 +46,7 @@ with col_in1:
         placeholder="예: 137400, 피엔티, 에이스테크, 005930"
     ).strip()
 with col_in2:
-    mode_option = st.selectbox(
-        "데이터 모드",
-        options=["📁 원본 파일 기준 (2018~2020년)", "🌐 실시간 최신 데이터 조회"],
-        index=0
-    )
+    years_back = st.selectbox("조회 기간", options=[2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
 
 stock_code = user_input
 stock_name = user_input
@@ -71,7 +67,7 @@ def r10(val):
 def style_table(df_target, df_full):
     """
     1. 등락률(C): 양수 붉은색, 음수 파란색
-    2. MM, PM, LM, S, RM: 붉은색 그라데이션 히트맵 (S값 특히 강조)
+    2. MM, PM, LM, S, RM: 붉은색 그라데이션 히트맵 (S값을 진하게 특히 강조)
     """
     cols_grad = ['MM', 'PM', 'LM', 'S', 'RM']
     col_bounds = {}
@@ -96,7 +92,7 @@ def style_table(df_target, df_full):
                     except:
                         pass
 
-            # ② MM, PM, LM, S, RM 열: 붉은색 농도 그라데이션 (S값 강조)
+            # ② MM, PM, LM, S, RM 열: 그라데이션 및 S값 특별 강조
             elif col_name in cols_grad:
                 try:
                     v = float(val)
@@ -104,12 +100,19 @@ def style_table(df_target, df_full):
                     ratio = 0.0 if vmax == vmin else (v - vmin) / (vmax - vmin)
                     ratio = max(0.0, min(1.0, float(ratio)))
                     
-                    r = int(255 - ratio * (255 - 198))
-                    g = int(245 - ratio * (245 - 28))
-                    b = int(245 - ratio * (245 - 28))
-                    txt_color = '#FFFFFF' if ratio > 0.45 else '#111111'
-                    fw = 'bold' if col_name == 'S' or ratio > 0.4 else 'normal'
-                    styles[idx] = f'background-color: #{r:02x}{g:02x}{b:02x}; color: {txt_color}; font-weight: {fw};'
+                    if col_name == 'S':
+                        # S값은 눈에 확 띄도록 강한 대비 색상 적용
+                        if v >= 0:
+                            styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: 900;'
+                        else:
+                            styles[idx] = 'background-color: #BBDEFB; color: #0D47A1; font-weight: 900;'
+                    else:
+                        r = int(255 - ratio * (255 - 198))
+                        g = int(245 - ratio * (245 - 28))
+                        b = int(245 - ratio * (245 - 28))
+                        txt_color = '#FFFFFF' if ratio > 0.45 else '#111111'
+                        fw = 'bold' if ratio > 0.4 else 'normal'
+                        styles[idx] = f'background-color: #{r:02x}{g:02x}{b:02x}; color: {txt_color}; font-weight: {fw};'
                 except:
                     pass
         return styles
@@ -324,24 +327,15 @@ def calculate_ultima_sheet(df_raw):
 
 # 데이터 로드 처리
 if stock_code:
-    if "원본 파일" in mode_option and stock_code == "137400":
-        try:
-            df_orig = pd.read_excel('피엔티 예제_20201029.xlsx', sheet_name='피엔티', header=None)
-            raw_df = df_orig.iloc[9:695, [0, 1, 4]].copy()
-            raw_df.columns = ['Date', 'Close', 'Volume']
-        except Exception:
-            raw_df = fdr.DataReader(stock_code, '2018-01-02', '2020-10-16').reset_index()
-            raw_df.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Change']
-    else:
-        start_dt = (datetime.today() - timedelta(days=365 * 3)).strftime('%Y-%m-%d')
-        with st.spinner(f"[{stock_name} ({stock_code})] 데이터를 불러오는 중입니다..."):
-            raw_df = fdr.DataReader(stock_code, start_dt)
-            if raw_df is not None:
-                raw_df = raw_df.reset_index()
-                if 'Date' not in raw_df.columns:
-                    raw_df.rename(columns={raw_df.columns[0]: 'Date'}, inplace=True)
-                if 'Close' not in raw_df.columns and '종가' in raw_df.columns:
-                    raw_df.rename(columns={'종가': 'Close', '거래량': 'Volume'}, inplace=True)
+    start_dt = (datetime.today() - timedelta(days=365 * years_back)).strftime('%Y-%m-%d')
+    with st.spinner(f"[{stock_name} ({stock_code})] 실시간 데이터를 불러오는 중입니다..."):
+        raw_df = fdr.DataReader(stock_code, start_dt)
+        if raw_df is not None:
+            raw_df = raw_df.reset_index()
+            if 'Date' not in raw_df.columns:
+                raw_df.rename(columns={raw_df.columns[0]: 'Date'}, inplace=True)
+            if 'Close' not in raw_df.columns and '종가' in raw_df.columns:
+                raw_df.rename(columns={'종가': 'Close', '거래량': 'Volume'}, inplace=True)
 
     if raw_df is not None and not raw_df.empty:
         df_result, s = calculate_ultima_sheet(raw_df)
@@ -363,7 +357,7 @@ if stock_code:
         ])
 
         with tab1:
-            st.caption("📈 주가 상승일(등락률 붉은색) / 하락일(파란색) 및 MM~RM 열의 붉은색 농도(S값 특히 강조)가 적용되었습니다.")
+            st.caption("📈 주가 상승일(등락률 붉은색) / 하락일(파란색) 및 S값과 MM~RM 열의 시인성 강조 스타일이 적용되었습니다.")
             df_rev = df_result.iloc[::-1]
             styled_all = style_table(df_rev, df_result)
             st.dataframe(styled_all, use_container_width=True, height=520)
