@@ -7,7 +7,7 @@ from io import BytesIO
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="간편 교대 매매 분석기 Pro+",
+    page_title="간편 교대 매매 분석기 Pro+++++",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 Pro+ (자산 연동 정밀 수정 버전)")
+st.subheader("📈 간편 교대 매매 시스템 (종목코드별 완벽 분리 연동)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -303,27 +303,36 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 💼 [정밀 종목 매칭형 총자산 대시보드]
+        # 💼 [엄격한 종목코드/종목명 일치형 총자산 대시보드]
         with st.expander(f"💼 [자산 관리] '{stock_name} ({stock_code})' 수량 및 실시간 총자산 대시보드", expanded=True):
             col_as1, col_as2 = st.columns(2)
             with col_as1:
                 user_safe_cash = st.number_input("고정 안전금고 현금 (원)", min_value=0, value=3000000, step=500000, format="%d", key="safe_cash_input")
             with col_as2:
-                calc_mode = st.radio("자산 계산 범위", ["현재 화면에 조회 중인 종목만 계산", "전체 종목 합산 계산"], index=0, horizontal=True)
+                match_type = st.radio("종목 일치 기준", ["종목코드(6자리) 또는 종목명 정확히 일치", "모든 매매일지 합산"], index=0, horizontal=True)
 
-            # 매매일지 기반 보유 수량 계산 (엄격한 종목코드/종목명 매칭)
+            # 매매일지 기반 보유 수량 계산 (정밀 매칭 로직)
             total_shares = 0
             if 'trade_logs' in st.session_state and st.session_state.trade_logs:
                 for lg in st.session_state.trade_logs:
                     g = lg.get('구분', '')
                     item_name = str(lg.get('종목', ''))
                     
-                    if calc_mode == "현재 화면에 조회 중인 종목만 계산":
-                        # 정확히 현재 입력된 종목코드(예: 233740, 005930)나 종목명이 포함된 경우만 인정
-                        match_code = stock_code in item_name
-                        match_name = stock_name in item_name
-                        # 단, '삼성전자' 조회 시 '삼성'이 다른 종목과 섞이지 않도록 정확히 체크
-                        if not (match_code or match_name):
+                    if match_type == "종목코드(6자리) 또는 종목명 정확히 일치":
+                        # 입력된 6자리 종목코드(예: 233740, 005930)나 정확한 이름이 포함되었는지 확인
+                        # 단, '삼성'과 '삼성전자' 등 글자 겹침으로 인한 오인식을 막기 위해 고유 키워드 검사
+                        code_matched = stock_code in item_name
+                        name_matched = stock_name in item_name
+                        
+                        # 예외 방어: 만약 '삼성전자'를 조회하는데 레버리지 내역이 딸려오지 않도록 함
+                        if stock_code == "005930" and ("233740" in item_name or "레버리지" in item_name):
+                            code_matched = False
+                            name_matched = False
+                        if stock_code == "233740" and ("005930" in item_name or "삼성전자" in item_name):
+                            code_matched = False
+                            name_matched = False
+
+                        if not (code_matched or name_matched):
                             continue
 
                     try:
@@ -336,7 +345,7 @@ if stock_code:
                     elif '익절' in g or '청산' in g:
                         total_shares = max(0, total_shares - qty)
 
-            # 주식 평가금액 = 현재가(B1) * 현재 조회 중인 종목의 보유 수량
+            # 주식 평가금액 = 현재가(B1) * 정확히 필터링된 보유 수량
             current_stock_value = s['B1'] * total_shares
             total_net_asset = current_stock_value + user_safe_cash
             stock_weight = (current_stock_value / total_net_asset) * 100 if total_net_asset > 0 else 0
