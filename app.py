@@ -7,7 +7,7 @@ from io import BytesIO
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="간편 교대 매매 분석기 Pro+++",
+    page_title="간편 교대 매매 분석기 Pro++++",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 Pro+++ (다종목 수량 & 자산 완벽 분리)")
+st.subheader("📈 간편 교대 매매 시스템 Pro++++ (종목별 자산 완벽 분리 & 정확한 평가액 산출)")
 
 # 네이버 금융 일별 시세 크롤링 함수 (종목코드별 동적 조회)
 @st.cache_data(ttl=3600)
@@ -303,25 +303,26 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 💼 [종목별 독립 수량 완벽 분리 대시보드]
+        # 💼 [엄격한 종목 분리 수량 연동 대시보드]
         with st.expander(f"💼 [자산 관리] '{stock_name} ({stock_code})' 수량 및 실시간 총자산 대시보드", expanded=True):
             col_as1, col_as2 = st.columns(2)
             with col_as1:
                 user_safe_cash = st.number_input("고정 안전금고 현금 (원)", min_value=0, value=3000000, step=500000, format="%d", key="safe_cash_input")
             with col_as2:
-                filter_mode = st.radio("수량 집계 방식", ["현재 조회 중인 종목만 계산", "전체 종목 합산 계산"], index=0, horizontal=True)
+                calc_mode = st.radio("자산 계산 기준", ["현재 화면에 조회 중인 종목만 계산", "전체 보유 종목 합산 계산"], index=0, horizontal=True)
 
-            # 매매일지 기반 종목별 보유 주식 수량 계산 (정밀 매칭)
+            # 매매일지 기반 보유 주식 수량 계산 (정밀 매칭)
             total_shares = 0
             if 'trade_logs' in st.session_state and st.session_state.trade_logs:
                 for lg in st.session_state.trade_logs:
                     g = lg.get('구분', '')
                     item_name = str(lg.get('종목', ''))
                     
-                    # 현재 조회 중인 종목만 필터링할 때 조건 검사 (코드 또는 이름 포함 여부)
-                    if filter_mode == "현재 조회 중인 종목만 계산":
-                        is_match = (stock_code in item_name) or (stock_name in item_name)
-                        if not is_match:
+                    if calc_mode == "현재 화면에 조회 중인 종목만 계산":
+                        # 현재 조회 중인 종목코드나 종목명이 정확히 일치하거나 포함될 때만 수량 합산
+                        is_code_match = stock_code in item_name
+                        is_name_match = stock_name in item_name
+                        if not (is_code_match or is_name_match):
                             continue
 
                     try:
