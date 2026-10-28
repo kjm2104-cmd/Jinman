@@ -24,7 +24,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 울티마 모바일 교대 매매 시스템")
+st.subheader("📈교대 매매 시스템")
 
 # KRX 종목 리스트 캐싱
 @st.cache_data(ttl=86400)
