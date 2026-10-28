@@ -9,7 +9,7 @@ from openpyxl.utils import get_column_letter
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="울티마 모바일 분석기",
+    page_title="모바일 분석기",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
