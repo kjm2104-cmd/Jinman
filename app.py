@@ -29,17 +29,14 @@ st.subheader("📈 간편 교대 매매 시스템 (레버리지 7단계 매수 �
 def get_krx_list():
     try:
         krx = fdr.StockListing('KRX')
-        if 'Code' in krx.columns and 'Name' in krx.columns:
-            return krx[['Code', 'Name']]
-        elif 'Symbol' in krx.columns and 'Name' in krx.columns:
-            return krx.rename(columns={'Symbol': 'Code'})[['Code', 'Name']]
-        return krx
+        if krx is not None and not krx.empty:
+            if 'Code' in krx.columns and 'Name' in krx.columns:
+                return krx[['Code', 'Name']]
+            elif 'Symbol' in krx.columns and 'Name' in krx.columns:
+                return krx.rename(columns={'Symbol': 'Code'})[['Code', 'Name']]
+        return pd.DataFrame()
     except Exception:
-        fallback_data = {
-            'Code': ['233740', '229200', '137400', '088800', '005930', '069500'],
-            'Name': ['KODEX 코스닥150레버리지', 'KODEX 코스닥150선물인버스', '피엔티', '에이스테크', '삼성전자', 'KODEX 200']
-        }
-        return pd.DataFrame(fallback_data)
+        return pd.DataFrame()
 
 krx_df = get_krx_list()
 
@@ -57,7 +54,7 @@ with col_in2:
 stock_code = user_input
 stock_name = user_input
 
-if not krx_df.empty:
+if krx_df is not None and not krx_df.empty:
     krx_df['Code'] = krx_df['Code'].astype(str).str.zfill(6)
     
     if user_input.isdigit() and len(user_input) <= 6:
@@ -65,12 +62,12 @@ if not krx_df.empty:
         match = krx_df[krx_df['Code'] == target_code]
         if not match.empty:
             stock_code = target_code
-            stock_name = match['Name'].iloc[0]
+            stock_name = str(match['Name'].iloc[0])
     else:
         match = krx_df[krx_df['Name'].str.contains(user_input, na=False)]
         if not match.empty:
-            stock_code = match['Code'].iloc[0]
-            stock_name = match['Name'].iloc[0]
+            stock_code = str(match['Code'].iloc[0])
+            stock_name = str(match['Name'].iloc[0])
 
 def r10(val):
     return int(np.floor(val / 10.0 + 0.5) * 10)
@@ -79,13 +76,14 @@ def style_table(df_target, df_full):
     cols_grad = ['MM', 'PM', 'LM', 'RM']
     col_bounds = {}
     for c in cols_grad:
-        vals = pd.to_numeric(df_full[c], errors='coerce')
-        col_bounds[c] = (vals.min(), vals.max())
+        if c in df_full.columns:
+            vals = pd.to_numeric(df_full[c], errors='coerce')
+            col_bounds[c] = (vals.min(), vals.max())
 
     def color_styler(row_idx, row):
         styles = [''] * len(row)
-        curr_close = row['종가(B)']
-        prev_close = df_full.iloc[row_idx - 1]['종가(B)'] if row_idx > 0 else None
+        curr_close = row.get('종가(B)', 0)
+        prev_close = df_full.iloc[row_idx - 1].get('종가(B)', 0) if row_idx > 0 else None
 
         for idx, col_name in enumerate(row.index):
             val = row[col_name]
@@ -98,9 +96,13 @@ def style_table(df_target, df_full):
                 except:
                     pass
             elif col_name == '매수신호(레버리지/인버스)':
-                if '7차 최종' in str(val) or '7차 풀베팅' in str(val) or '5차 최종익절' in str(val): styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
-                elif '매수' in str(val): styles[idx] = 'background-color: #D32F2F; color: #FFFFFF; font-weight: bold;'
-                elif '익절' in str(val): styles[idx] = 'background-color: #E3F2FD; color: #0D47A1; font-weight: bold;'
+                val_str = str(val)
+                if '7차 최종' in val_str or '7차 풀베팅' in val_str or '5차 최종익절' in val_str: 
+                    styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
+                elif '매수' in val_str: 
+                    styles[idx] = 'background-color: #D32F2F; color: #FFFFFF; font-weight: bold;'
+                elif '익절' in val_str: 
+                    styles[idx] = 'background-color: #E3F2FD; color: #0D47A1; font-weight: bold;'
             elif col_name in cols_grad:
                 try:
                     v = float(val)
@@ -112,17 +114,26 @@ def style_table(df_target, df_full):
                     pass
         return styles
 
-    return df_target.style.apply(lambda row: color_styler(row.name, row), axis=1).format({'종가(B)': '{:,}', '중심선(D)': '{:,}', '거래량(E)': '{:,}', '거래비율(F)': '{:.2f}'})
+    return df_target.style.apply(lambda row: color_styler(row.name, row), axis=1).format({'종가(B)': '{:,}', '중심선(D)': '{:,}', '거래량(E)': '{:,}', '거래비율(F)': '{:.2f}'}, na_rep="-")
 
 def calculate_indicator_sheet(df_raw):
     df = df_raw.copy().reset_index(drop=True)
-    closes = df['Close'].astype(float).values
-    vols = df['Volume'].astype(float).values
+    
+    # 컬럼명 표준화 방어 코드
+    if 'Close' not in df.columns and '종가' in df.columns:
+        df.rename(columns={'종가': 'Close'}, inplace=True)
+    if 'Volume' not in df.columns and '거래량' in df.columns:
+        df.rename(columns={'거래량': 'Volume'}, inplace=True)
+    if 'Date' not in df.columns:
+        df.rename(columns={df.columns[0]: 'Date'}, inplace=True)
+
+    closes = pd.to_numeric(df['Close'], errors='coerce').fillna(method='ffill').values
+    vols = pd.to_numeric(df['Volume'], errors='coerce').fillna(0).values
     dates = pd.to_datetime(df['Date']).values
     n = len(closes)
 
     chg = np.zeros(n)
-    chg[1:] = (closes[1:] / closes[:-1]) - 1.0
+    chg[1:] = (closes[1:] / np.where(closes[:-1] == 0, 1, closes[:-1])) - 1.0
     ema = np.zeros(n); ema[0] = closes[0]
     for i in range(1, n): ema[i] = round((ema[i - 1] * 6.0 + closes[i]) / 7.0)
 
@@ -133,10 +144,11 @@ def calculate_indicator_sheet(df_raw):
     buy_signals = []
 
     state = 'UP'
-    peak = int(closes[0]); trough = int(closes[0])
-    first_M = int(closes[0]); first_Q = int(closes[0])
+    peak = int(closes[0]) if n > 0 else 0
+    trough = int(closes[0]) if n > 0 else 0
+    first_M = int(closes[0]) if n > 0 else 0
     up_phase = 'M'; down_phase = 'Q'
-    M8, N8, P8, Q8 = int(closes[0]), int(closes[0]), int(closes[0]), int(closes[0])
+    M8, N8, P8, Q8 = peak, peak, peak, peak
 
     for i in range(n):
         p = int(round(closes[i]))
@@ -149,7 +161,7 @@ def calculate_indicator_sheet(df_raw):
             elif p <= r10(peak * (1.0 - 0.095)):
                 N8 = peak if up_phase == 'N' else N8
                 M8 = peak if up_phase == 'M' else M8
-                state = 'DOWN'; trough = p; first_Q = p
+                state = 'DOWN'; trough = p
         else:
             if p < trough: trough = p
             elif p >= r10(trough * 1.095):
@@ -163,7 +175,7 @@ def calculate_indicator_sheet(df_raw):
         lm = int(round((p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
         s_val = lm - mm
 
-        # 통합 표 및 신호 체계 (7단계 매수 ⇄ 마이너스 회복 5분할 익절)
+        # 7단계 매수 / 마이너스 회복 5분할 익절 신호 체계
         if s_val <= -45:
             sig = "🔥 7차 매수 (풀베팅 / 누적 100%)"
             invest_pct = "레버리지 100% (2,700만)"
@@ -250,12 +262,14 @@ def calculate_indicator_sheet(df_raw):
 # 데이터 로드 처리
 if stock_code:
     start_dt = (datetime.today() - timedelta(days=365 * years_back)).strftime('%Y-%m-%d')
-    with st.spinner(f"[{stock_name} ({stock_code})] 실시간 데이터를 불러오는 중입니다..."):
-        raw_df = fdr.DataReader(stock_code, start_dt)
-        if raw_df is not None:
-            raw_df = raw_df.reset_index()
-            if 'Date' not in raw_df.columns: raw_df.rename(columns={raw_df.columns[0]: 'Date'}, inplace=True)
-            if 'Close' not in raw_df.columns and '종가' in raw_df.columns: raw_df.rename(columns={'종가': 'Close', '거래량': 'Volume'}, inplace=True)
+    raw_df = None
+    try:
+        with st.spinner(f"[{stock_name} ({stock_code})] 실시간 데이터를 불러오는 중입니다..."):
+            raw_df = fdr.DataReader(stock_code, start_dt)
+            if raw_df is not None and not raw_df.empty:
+                raw_df = raw_df.reset_index()
+    except Exception as e:
+        st.error( 데이터를 불러오는 중 오류가 발생했습니다: {e} )
 
     if raw_df is not None and not raw_df.empty:
         df_result, s = calculate_indicator_sheet(raw_df)
@@ -381,4 +395,3 @@ if stock_code:
             )
     else:
         st.error("종목 데이터를 찾을 수 없습니다. 6자리 종목코드나 정확한 종목명을 입력해 주세요.")
-'''
