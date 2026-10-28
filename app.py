@@ -97,13 +97,13 @@ def style_table(df_target, df_full):
                     styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: 900; padding: 2px 6px; border-radius: 12px; display: inline-block;' if s_num > 0 else ('background-color: #BBDEFB; color: #0D47A1; font-weight: 900; padding: 2px 6px; border-radius: 12px; display: inline-block;' if s_num < 0 else 'background-color: #E0E0E0; color: #333333; font-weight: bold;')
                 except:
                     pass
-            elif col_name == '매수신호(레버리지/인버스)':
+            elif col_name == '매매신호(레버리지/인버스)':
                 if '15차' in str(val) or '14차' in str(val): styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
                 elif '11차' in str(val) or '12차' in str(val) or '13차' in str(val): styles[idx] = 'background-color: #D32F2F; color: #FFFFFF; font-weight: bold;'
                 elif '8차' in str(val) or '9차' in str(val) or '10차' in str(val): styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: bold;'
                 elif '5차' in str(val) or '6차' in str(val) or '7차' in str(val): styles[idx] = 'background-color: #FFE0B2; color: #E65100; font-weight: bold;'
                 elif '1차' in str(val) or '2차' in str(val) or '3차' in str(val) or '4차' in str(val): styles[idx] = 'background-color: #FFF9C4; color: #F57F17; font-weight: bold;'
-                elif '스위칭' in str(val): styles[idx] = 'background-color: #E3F2FD; color: #0D47A1; font-weight: bold;'
+                elif '매도' in str(val) or '스위칭' in str(val): styles[idx] = 'background-color: #E3F2FD; color: #0D47A1; font-weight: bold;'
             elif col_name in cols_grad:
                 try:
                     v = float(val)
@@ -166,7 +166,7 @@ def calculate_indicator_sheet(df_raw):
         lm = int(round((p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
         s_val = lm - mm
 
-        # 15분할 점증형 매수 (4% 시작 ~ 아래로 갈수록 비중 확대)
+        # 15분할 점증형 매수 및 S값 회복에 따른 매도/스위칭 신호 복합 판정
         if s_val <= -55:
             sig = "🔥 15차 풀베팅 (바닥)"
             invest_pct = "레버리지 100% (3,000만)"
@@ -227,13 +227,30 @@ def calculate_indicator_sheet(df_raw):
             sig = "🔍 1차 입질 (4%)"
             invest_pct = "레버리지 4%"
             cash_pct = "현금 96%"
-        elif s_val >= 20:
-            sig = "🔄 인버스 스위칭"
+        # 매도 구간 (S값 회복 및 과열)
+        elif s_val >= 25:
+            sig = "🔥 5차 최종매도 & 인버스완성"
             invest_pct = "인버스 50% (최대 1,500만)"
-            cash_pct = "현금 50% (안전 보유)"
+            cash_pct = "현금 50%"
+        elif s_val >= 18:
+            sig = "✨ 4차 매도 (누적 80% 익절)"
+            invest_pct = "레버리지 20% 잔여"
+            cash_pct = "현금 80%"
+        elif s_val >= 12:
+            sig = "✨ 3차 매도 (누적 60% 익절)"
+            invest_pct = "레버리지 40% 잔여"
+            cash_pct = "현금 60%"
+        elif s_val >= 6:
+            sig = "✨ 2차 매도 (누적 40% 익절)"
+            invest_pct = "레버리지 60% 잔여"
+            cash_pct = "현금 40%"
+        elif s_val >= 1:
+            sig = "✨ 1차 매도 (누적 20% 익절)"
+            invest_pct = "레버리지 80% 잔여"
+            cash_pct = "현금 20%"
         else:
-            sig = "대기 및 관망"
-            invest_pct = "중립 구간"
+            sig = "중립 대기 구간"
+            invest_pct = "기존 비중 유지"
             cash_pct = "현금 대기"
 
         d_cur = pd.Timestamp(dates[i])
@@ -247,7 +264,7 @@ def calculate_indicator_sheet(df_raw):
         '일자': pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d'),
         '종가(B)': closes.astype(int),
         '등락률(C)': [f"{x*100:+.2f}%" for x in chg],
-        '매수신호(레버리지/인버스)': buy_signals,
+        '매매신호(레버리지/인버스)': buy_signals,
         '중심선(D)': ema.astype(int),
         '거래량(E)': vols.astype(int),
         '거래비율(F)': vol_ratio,
@@ -295,10 +312,10 @@ if stock_code:
         c3.metric("목표 포트폴리오 비중", s['invest_pct'])
         c4.metric("안전 대기 현금", s['cash_pct'])
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 15분할 매매 표", "🎯 매수/매도 가이드", "📝 매매일지 (영구 저장)", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 매수/매도 실시간 가이드", "📝 매매일지 (영구 저장)", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 S값 기준 [15분할 점증형 매수 (4% 시작 ~ 비중 확대)] 및 [인버스 50% 제한 스위칭] 자동 반영")
+            st.caption("📈 S값 기준 [15분할 점증형 매수] 및 [5분할 평단익절 & 인버스 50% 스위칭] 통합 반영")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
@@ -324,8 +341,8 @@ if stock_code:
             st.dataframe(pd.DataFrame(buy_guide_data), use_container_width=True)
 
             st.markdown("---")
-            st.markdown("##### 📈 [2단계] 상승장 평단 기준 5분할 매도 & 인버스 50% 가이드")
-            st.info("내 레버리지 평균단가를 입력하면 기계적으로 대응할 5분할 목표가가 자동 계산됩니다.")
+            st.markdown("##### 📈 [2단계] 상승장 평단 기준 5분할 매도 & 인버스 50% 연동 가이드")
+            st.info("내 레버리지 평균단가와 현재가를 입력하면 기계적으로 대응할 5분할 목표가와 실행 여부가 즉시 계산됩니다.")
 
             col_g1, col_g2 = st.columns(2)
             with col_g1:
@@ -343,12 +360,15 @@ if stock_code:
             p4 = int(my_avg_price * 1.20)
             p5 = int(my_avg_price * 1.25)
 
+            def get_sell_status(target_p):
+                return "🟢 도달 완료 (익절 실행)" if current_price >= target_p else "⚪ 대기 중"
+
             sell_guide_data = [
-                {"단계": "1차 매도 (20%)", "목표 수익률": "+5.0% 이상", "목표가": f"{p1:,}원", "인버스 연동": "현금 확보 (대기)"},
-                {"단계": "2차 매도 (20%)", "목표 수익률": "+10.0% 이상", "목표가": f"{p2:,}원", "인버스 연동": "현금 확보 (대기)"},
-                {"단계": "3차 매도 (20%)", "목표 수익률": "+15.0% 이상", "목표가": f"{p3:,}원", "인버스 연동": "인버스 1차 (300만)"},
-                {"단계": "4차 매도 (20%)", "목표 수익률": "+20.0% 이상", "목표가": f"{p4:,}원", "인버스 연동": "인버스 2차 (600만)"},
-                {"단계": "5차 최종 (20%)", "목표 수익률": "+25.0% 이상", "목표가": f"{p5:,}원", "인버스 연동": "인버스 완성 (총 1,500만 / 50%)"},
+                {"단계": "1차 매도 (20% 익절)", "목표 수익률": "+5.0% 이상", "목표가": f"{p1:,}원", "진행 상태": get_sell_status(p1), "인버스 연동": "현금 확보 (대기)"},
+                {"단계": "2차 매도 (20% 익절)", "목표 수익률": "+10.0% 이상", "목표가": f"{p2:,}원", "진행 상태": get_sell_status(p2), "인버스 연동": "현금 확보 (대기)"},
+                {"단계": "3차 매도 (20% 익절)", "목표 수익률": "+15.0% 이상", "목표가": f"{p3:,}원", "진행 상태": get_sell_status(p3), "인버스 연동": "인버스 1차 (300만)"},
+                {"단계": "4차 매도 (20% 익절)", "목표 수익률": "+20.0% 이상", "목표가": f"{p4:,}원", "진행 상태": get_sell_status(p4), "인버스 연동": "인버스 2차 (600만)"},
+                {"단계": "5차 최종 (잔여 20%)", "목표 수익률": "+25.0% 이상", "목표가": f"{p5:,}원", "진행 상태": get_sell_status(p5), "인버스 연동": "인버스 완성 (총 1,500만 / 50%)"},
             ]
             st.dataframe(pd.DataFrame(sell_guide_data), use_container_width=True)
 
