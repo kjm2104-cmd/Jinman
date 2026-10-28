@@ -43,7 +43,7 @@ with col_in1:
     user_input = st.text_input(
         "🔍 종목코드(6자리) 또는 종목명 입력",
         value="005930",
-        placeholder="예: 005930, 삼성전자, 에이스테크, 005930"
+        placeholder="예: 005930, 삼성전자, KODEX 코스닥150레버리지, 233740"
     ).strip()
 with col_in2:
     years_back = st.selectbox("조회 기간", options=[3, 4, 5], index=0, format_func=lambda x: f"최근 {x}년")
