@@ -7,7 +7,7 @@ from io import BytesIO
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="간편 교대 매매 분석기 Pro++++",
+    page_title="간편 교대 매매 분석기 Pro+",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -22,9 +22,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 Pro++++ (종목별 자산 완벽 분리 & 정확한 평가액 산출)")
+st.subheader("📈 간편 교대 매매 시스템 Pro+ (자산 연동 정밀 수정 버전)")
 
-# 네이버 금융 일별 시세 크롤링 함수 (종목코드별 동적 조회)
+# 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
 def get_naver_stock_data(code, count=1250):
     url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count={count}&requestType=0"
@@ -67,7 +67,7 @@ with col_in1:
     user_input = st.text_input(
         "🔍 조회할 종목코드(6자리) 입력",
         value="233740",
-        placeholder="예: 삼성전자 또는 005930"
+        placeholder="예: 233740 또는 005930"
     ).strip()
 with col_in2:
     years_back = st.selectbox("조회 기간", options=[1, 2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
@@ -303,15 +303,15 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 💼 [엄격한 종목 분리 수량 연동 대시보드]
+        # 💼 [정밀 종목 매칭형 총자산 대시보드]
         with st.expander(f"💼 [자산 관리] '{stock_name} ({stock_code})' 수량 및 실시간 총자산 대시보드", expanded=True):
             col_as1, col_as2 = st.columns(2)
             with col_as1:
                 user_safe_cash = st.number_input("고정 안전금고 현금 (원)", min_value=0, value=3000000, step=500000, format="%d", key="safe_cash_input")
             with col_as2:
-                calc_mode = st.radio("자산 계산 기준", ["현재 화면에 조회 중인 종목만 계산", "전체 보유 종목 합산 계산"], index=0, horizontal=True)
+                calc_mode = st.radio("자산 계산 범위", ["현재 화면에 조회 중인 종목만 계산", "전체 종목 합산 계산"], index=0, horizontal=True)
 
-            # 매매일지 기반 보유 주식 수량 계산 (정밀 매칭)
+            # 매매일지 기반 보유 수량 계산 (엄격한 종목코드/종목명 매칭)
             total_shares = 0
             if 'trade_logs' in st.session_state and st.session_state.trade_logs:
                 for lg in st.session_state.trade_logs:
@@ -319,10 +319,11 @@ if stock_code:
                     item_name = str(lg.get('종목', ''))
                     
                     if calc_mode == "현재 화면에 조회 중인 종목만 계산":
-                        # 현재 조회 중인 종목코드나 종목명이 정확히 일치하거나 포함될 때만 수량 합산
-                        is_code_match = stock_code in item_name
-                        is_name_match = stock_name in item_name
-                        if not (is_code_match or is_name_match):
+                        # 정확히 현재 입력된 종목코드(예: 233740, 005930)나 종목명이 포함된 경우만 인정
+                        match_code = stock_code in item_name
+                        match_name = stock_name in item_name
+                        # 단, '삼성전자' 조회 시 '삼성'이 다른 종목과 섞이지 않도록 정확히 체크
+                        if not (match_code or match_name):
                             continue
 
                     try:
