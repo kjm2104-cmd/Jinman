@@ -9,7 +9,7 @@ from openpyxl.utils import get_column_letter
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title=" 모바일 분석기",
+    page_title="모바일 주식 분석기",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -24,7 +24,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈교대 매매 시스템")
+st.subheader("📈 모바일 주식 분석기 (시소 교대 매매 시스템)")
 
 # KRX 종목 리스트 캐싱
 @st.cache_data(ttl=86400)
@@ -119,7 +119,7 @@ def style_table(df_target, df_full):
 
     return df_target.style.apply(lambda row: color_styler(row.name, row), axis=1).format({'종가(B)': '{:,}', '중심선(D)': '{:,}', '거래량(E)': '{:,}', '거래비율(F)': '{:.2f}'})
 
-def calculate_ultima_sheet(df_raw):
+def calculate_indicator_sheet(df_raw):
     df = df_raw.copy().reset_index(drop=True)
     closes = df['Close'].astype(float).values
     vols = df['Volume'].astype(float).values
@@ -237,7 +237,7 @@ if stock_code:
             if 'Close' not in raw_df.columns and '종가' in raw_df.columns: raw_df.rename(columns={'종가': 'Close', '거래량': 'Volume'}, inplace=True)
 
     if raw_df is not None and not raw_df.empty:
-        df_result, s = calculate_ultima_sheet(raw_df)
+        df_result, s = calculate_indicator_sheet(raw_df)
 
         # 🚨 [상단 핵심 액션 배너] 오늘의 매매 지시등
         st.markdown(f"""
@@ -256,7 +256,7 @@ if stock_code:
         c3.metric("목표 포트폴리오 비중", s['invest_pct'])
         c4.metric("안전 대기 현금", s['cash_pct'])
 
-        tab1, tab2, tab3 = st.tabs(["📊 10분할 매매 표", "📝 간이 매매일지 (영구 저장)", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 10분할 매매 표", "🎯 매수/매도 가이드", "📝 매매일지 (영구 저장)", "💾 엑셀 다운로드"])
 
         with tab1:
             st.caption("📈 S값 기준 [1차 입질 ~ 10차 풀베팅] 및 [인버스 50% 제한 스위칭] 자동 반영")
@@ -264,9 +264,35 @@ if stock_code:
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
         with tab2:
+            st.markdown("##### 🎯 숫자 기반 매수 및 5분할 매도 가이드 계산기")
+            st.info("감정을 배제하고 숫자에만 의존하여 레버리지 평단 대비 수익률 및 인버스 스위칭 타이밍을 확인하세요.")
+
+            col_g1, col_g2 = st.columns(2)
+            with col_g1:
+                my_avg_price = st.number_input("내 레버리지 평균단가 (원)", min_value=100, value=int(s['B1']), step=100)
+            with col_g2:
+                current_price = st.number_input("현재 종가 (원)", min_value=100, value=int(s['B1']), step=100)
+
+            # 수익률 계산
+            if my_avg_price > 0:
+                return_pct = ((current_price / my_avg_price) - 1.0) * 100
+                st.metric("내 레버리지 현재 수익률", f"{return_pct:+.2f}%", f"평단 {my_avg_price:,원} 대비")
+
+            st.markdown("---")
+            st.markdown("###### 📊 [레버리지 5분할 매도 및 인버스 연동 가이드]")
+            
+            guide_data = [
+                {"단계": "1차 매도 (20% 물량)", "목표 수익률": "+5.0% 이상", "목표가": f"{int(my_avg_price * 1.05):,}원", "인버스 액션": "현금 확보 (인버스 대기)"},
+                {"단계": "2차 매도 (20% 물량)", "목표 수익률": "+10.0% 이상", "목표가": f"{int(my_avg_price * 1.10):,}원", "인버스 액션": "현금 확보 (인버스 대기)"},
+                {"단계": "3차 매도 (20% 물량)", "목표 수익률": "+15.0% 이상", "목표가": f"{int(my_avg_price * 1.15):,}원", "인버스 액션": "인버스 1차 진입 (300만)"},
+                {"단계": "4차 매도 (20% 물량)", "목표 수익률": "+20.0% 이상", "목표가": f"{int(my_avg_price * 1.20):,}원", "인버스 액션": "인버스 2차 진입 (600만)"},
+                {"단계": "5차 최종 (잔여 20%)", "목표 수익률": "+25.0% 이상", "목표가": f"{int(my_avg_price * 1.25):,}원", "인버스 액션": "인버스 최종 완성 (총 1,500만 / 50%)"},
+            ]
+            st.dataframe(pd.DataFrame(guide_data), use_container_width=True)
+
+        with tab3:
             st.markdown("##### 📝 실시간 모바일 매매일지 (브라우저 세션 저장)")
             
-            # st.session_state에 매매일지 리스트 초기화
             if 'trade_logs' not in st.session_state:
                 st.session_state.trade_logs = []
 
@@ -276,43 +302,37 @@ if stock_code:
                     t_date = st.date_input("거래 일자", datetime.today())
                     t_종목 = st.text_input("종목명", value=f"{stock_name} ({stock_code})")
                 with col_f2:
-                    t_type = st.selectbox("매매 구분", ["레버리지 1~3차 입질", "레버리지 4~7차 추가매수", "레버리지 8~10차 풀베팅", "인버스 스위칭 진입(50%)", "전량 청산 및 현금화"])
+                    t_type = st.selectbox("매매 구분", ["레버리지 1~3차 입질", "레버리지 4~7차 추가매수", "레버리지 8~10차 풀베팅", "레버리지 1~2차 매도(익절)", "레버리지 3~5차 매도(익절)", "인버스 스위칭 진입(50%)", "전량 청산 및 현금화"])
                     t_price = st.number_input("체결 가격 (원)", min_value=0, value=int(s['B1']), step=100)
                 
                 t_amt = st.number_input("투자 금액 (원)", min_value=0, value=3000000, step=100000)
-                t_memo = st.text_input("메모 (예: S값 -32 진입, 분할 매수)", placeholder="특이사항이나 매매 사유 입력")
+                t_memo = st.text_input("메모", placeholder="특이사항이나 매매 사유 입력")
                 
                 submitted = st.form_submit_button("매매일지 저장하기")
                 if submitted:
                     new_log = {
-                        "일자": str(t_date),
-                        "종목": t_종목,
-                        "구분": t_type,
-                        "체결가": f"{t_price:,}원",
-                        "투자금": f"{t_amt:,}원",
-                        "메모": t_memo
+                        "일자": str(t_date), "종목": t_종목, "구분": t_type,
+                        "체결가": f"{t_price:,}원", "투자금": f"{t_amt:,}원", "메모": t_memo
                     }
-                    st.session_state.trade_logs.insert(0, new_log)  # 최신순 정렬
+                    st.session_state.trade_logs.insert(0, new_log)
                     st.success("매매일지가 세션에 안전하게 저장되었습니다!")
 
-            # 저장된 매매일지 테이블 출력
             if st.session_state.trade_logs:
                 st.markdown("---")
                 st.markdown("##### 📋 저장된 매매일지 내역")
                 log_df = pd.DataFrame(st.session_state.trade_logs)
                 st.dataframe(log_df, use_container_width=True)
                 
-                # 전체 기록 초기화 버튼
                 if st.button("🗑️ 매매일지 전체 초기화"):
                     st.session_state.trade_logs = []
                     st.rerun()
             else:
-                st.info("아직 저장된 매매일지가 없습니다. 위 폼을 통해 첫 기록을 남겨보세요!")
+                st.info("아직 저장된 매매일지가 없습니다.")
 
-        with tab3:
+        with tab4:
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_result.to_excel(writer, index=False, sheet_name="Ultima_Trading")
+                df_result.to_excel(writer, index=False, sheet_name="Trading_System")
             st.download_button(
                 label=f"📥 {stock_name}({stock_code}) 매매전략 엑셀 다운로드",
                 data=output.getvalue(),
