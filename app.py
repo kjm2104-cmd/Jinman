@@ -7,7 +7,7 @@ from io import BytesIO
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="간편 교대 매매 분석기 Pro",
+    page_title="간편 교대 매매 분석기 Pro+",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 Pro (7단계 매수 ⇄ 마이너스 회복 익절)")
+st.subheader("📈 간편 교대 매매 시스템 Pro+ (수량 연동 & 총자산 대시보드)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -304,43 +304,46 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 💼 [업그레이드] 안전금고 연동형 실시간 현금 비중 & 총자산 대시보드
-        with st.expander("💼 [자산 관리] 안전금고 현금 비중 및 실시간 총자산 대시보드", expanded=True):
-            col_as1, col_as2, col_as3 = st.columns(3)
+        # 💼 [수량 연동형 자산 관리 대시보드]
+        with st.expander("💼 [자산 관리] 보유 수량 연동 및 실시간 총자산 대시보드", expanded=True):
+            col_as1, col_as2 = st.columns(2)
             with col_as1:
-                user_seed = st.number_input("내 총 시드머니 (원)", min_value=1000000, value=30000000, step=1000000, format="%d")
-            with col_as2:
                 user_safe_cash = st.number_input("고정 안전금고 현금 (원)", min_value=0, value=3000000, step=500000, format="%d")
-            with col_as3:
-                sync_mode = st.checkbox("매매일지 총 투입금 반영", value=False, help="매매일지에 기록된 투자금 합계를 반영합니다.")
+            with col_as2:
+                sync_mode = st.checkbox("매매일지 보유 수량 자동 연동", value=True, help="매매일지에 기록된 매수/매도 수량을 합산하여 현재 보유 주식 수량을 계산합니다.")
 
-            # 매매일지 연동 로직
+            # 매매일지 기반 보유 주식 수량 계산
+            total_shares = 0
             logged_invest_total = 0
             if 'trade_logs' in st.session_state and st.session_state.trade_logs:
                 for lg in st.session_state.trade_logs:
-                    if '매수' in lg.get('구분', ''):
-                        try:
-                            clean_amt = int(lg.get('투자금', '0').replace('원', '').replace(',', '').strip())
-                            logged_invest_total += clean_amt
-                        except:
-                            pass
+                    g = lg.get('구분', '')
+                    try:
+                        qty = int(lg.get('수량', 0))
+                        amt = int(lg.get('투자금', '0').replace('원', '').replace(',', '').strip())
+                    except:
+                        qty = 0
+                        amt = 0
+                    
+                    if '매수' in g:
+                        total_shares += qty
+                        logged_invest_total += amt
+                    elif '익절' in g or '청산' in g:
+                        total_shares = max(0, total_shares - qty)
 
-            active_pool = max(0, user_seed - user_safe_cash)
-            if sync_mode and logged_invest_total > 0:
-                current_invest_amt = logged_invest_total
-            else:
-                current_invest_amt = int(active_pool * s['invest_ratio'])
+            # 주식 평가금액 = 현재가(B1) * 보유 수량
+            current_stock_value = s['B1'] * total_shares if sync_mode else int((30000000 - user_safe_cash) * s['invest_ratio'])
+            total_net_asset = current_stock_value + user_safe_cash
+            stock_weight = (current_stock_value / total_net_asset) * 100 if total_net_asset > 0 else 0
+            cash_weight = (user_safe_cash / total_net_asset) * 100 if total_net_asset > 0 else 0
 
-            current_idle_cash = user_seed - current_invest_amt
-            stock_weight = (current_invest_amt / user_seed) * 100 if user_seed > 0 else 0
-            cash_weight = (current_idle_cash / user_seed) * 100 if user_seed > 0 else 0
+            c_w1, c_w2, c_w3, c_w4 = st.columns(4)
+            c_w1.metric("현재 보유 주식 수량", f"{total_shares:,}주")
+            c_w2.metric("주식 평가금액", f"{current_stock_value:,}원", f"{stock_weight:.1f}%")
+            c_w3.metric("안전금고 현금", f"{user_safe_cash:,}원", f"{cash_weight:.1f}%")
+            c_w4.metric("총 자산 평가액", f"{total_net_asset:,}원")
 
-            c_w1, c_w2, c_w3 = st.columns(3)
-            c_w1.metric("총 자산 규모", f"{user_seed:,}원")
-            c_w2.metric("주식 투입 금액 (현재 비중)", f"{current_invest_amt:,}원", f"{stock_weight:.1f}%")
-            c_w3.metric("총 대기 현금 (안전금고 포함)", f"{current_idle_cash:,}원", f"{cash_weight:.1f}%")
-
-            st.progress(stock_weight / 100.0, text=f"포트폴리오 주식 비중: {stock_weight:.1f}% / 현금 비중: {cash_weight:.1f}%")
+            st.progress(stock_weight / 100.0, text=f"총자산 기준 주식 비중: {stock_weight:.1f}% / 현금 비중: {cash_weight:.1f}%")
 
         # 핵심 가격 요약 카드
         c1, c2, c3, c4 = st.columns(4)
@@ -398,6 +401,7 @@ if stock_code:
                 with col_f1:
                     t_date = st.date_input("거래 일자", datetime.today())
                     t_종목 = st.text_input("종목명", value=f"{stock_name} ({stock_code})")
+                    t_qty = st.number_input("거래 수량 (주)", min_value=0, value=100, step=1)
                 with col_f2:
                     t_type = st.selectbox("매매 구분", ["레버리지 1~2차 매수 (5%~10%)", "레버리지 3~4차 매수 (15%)", "레버리지 5~6차 매수 (20%)", "레버리지 7차 풀베팅", "마이너스 회복 1~2차 익절", "마이너스 회복 3~5차 익절", "전량 청산 및 현금화", "현금 입금(+)", "현금 출금(-)"])
                     t_price = st.number_input("체결 가격 / 입출금액 (원)", min_value=0, value=int(s['B1']), step=100)
@@ -409,10 +413,10 @@ if stock_code:
                 if submitted:
                     new_log = {
                         "일자": str(t_date), "종목": t_종목, "구분": t_type,
-                        "체결가": f"{t_price:,}원", "투자금": f"{t_amt:,}원", "메모": t_memo
+                        "수량": t_qty, "체결가": f"{t_price:,}원", "투자금": f"{t_amt:,}원", "메모": t_memo
                     }
                     st.session_state.trade_logs.insert(0, new_log)
-                    st.success("매매일지가 세션에 안전하게 저장되었습니다! (상단 대시보드 '매매일지 총 투입금 반영' 체크 시 연동됩니다)")
+                    st.success("매매일지에 수량과 내역이 안전하게 저장되었습니다! (상단 대시보드에 실시간 연동됩니다)")
 
             if st.session_state.trade_logs:
                 st.markdown("---")
