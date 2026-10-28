@@ -7,7 +7,7 @@ from io import BytesIO
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="간편 교대 매매 분석기 Pro+++++",
+    page_title="간편 교대 매매 분석기",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (엔터 검색 최적화 버전)")
+st.subheader("📈 간편 교대 매매 시스템 (7단계 매수 ⇄ 마이너스 회복 익절)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -61,7 +61,7 @@ def get_naver_stock_data(code, count=1250):
     except Exception as e:
         return None
 
-# 종목 이름/코드 매핑 사전 (자주 쓰는 주요 종목 빠른 검색 지원)
+# 주요 종목 빠른 매핑 사전
 name_to_code = {
     "삼성전자": "005930",
     "KODEX 코스닥150레버리지": "233740",
@@ -72,7 +72,7 @@ name_to_code = {
     "현대차": "005380"
 }
 
-# 🔍 엔터 입력 및 버튼 클릭이 매끄럽게 작동하도록 Form 구조 적용
+# 🔍 엔터 입력 및 버튼 클릭이 매끄럽게 작동하는 검색 Form (placeholder 수정 완료)
 with st.form(key="search_form"):
     col_in1, col_in2, col_in3 = st.columns([2, 1, 1])
     with col_in1:
@@ -87,7 +87,7 @@ with st.form(key="search_form"):
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
         submit_search = st.form_submit_button("🔍 조회하기", use_container_width=True)
 
-# 입력값 파싱 (종목 이름으로 입력한 경우 코드로 자동 변환)
+# 입력값 파싱
 if user_input in name_to_code:
     stock_code = name_to_code[user_input]
     stock_name = user_input
@@ -95,7 +95,6 @@ elif user_input.isdigit():
     stock_code = user_input.zfill(6)
     stock_name = "삼성전자" if stock_code == "005930" else ("KODEX 코스닥150레버리지" if stock_code == "233740" else f"종목코드 {stock_code}")
 else:
-    # 부분 일치 검색 지원
     found = False
     for k, v in name_to_code.items():
         if user_input in k:
@@ -335,49 +334,6 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 💼 [종목코드 완벽 분리형 총자산 대시보드]
-        with st.expander(f"💼 [자산 관리] '{stock_name} ({stock_code})' 수량 및 실시간 총자산 대시보드", expanded=True):
-            col_as1, col_as2 = st.columns(2)
-            with col_as1:
-                user_safe_cash = st.number_input("고정 안전금고 현금 (원)", min_value=0, value=3000000, step=500000, format="%d", key="safe_cash_input")
-            with col_as2:
-                st.info(f"현재 조회 중인 종목(`{stock_code}`)의 매매일지 수량만 정확히 반영됩니다.")
-
-            # 매매일지 기반 보유 수량 계산 (엄격한 종목코드 매칭)
-            total_shares = 0
-            if 'trade_logs' in st.session_state and st.session_state.trade_logs:
-                for lg in st.session_state.trade_logs:
-                    g = lg.get('구분', '')
-                    item_name = str(lg.get('종목', ''))
-                    
-                    # 💡 핵심: 매매일지 기록에 현재 조회 중인 6자리 종목코드가 포함된 경우만 수량 합산
-                    if stock_code not in item_name:
-                        continue
-
-                    try:
-                        qty = int(lg.get('수량', 0))
-                    except:
-                        qty = 0
-                    
-                    if '매수' in g:
-                        total_shares += qty
-                    elif '익절' in g or '청산' in g:
-                        total_shares = max(0, total_shares - qty)
-
-            # 주식 평가금액 = 현재가(B1) * 현재 종목 보유 수량
-            current_stock_value = s['B1'] * total_shares
-            total_net_asset = current_stock_value + user_safe_cash
-            stock_weight = (current_stock_value / total_net_asset) * 100 if total_net_asset > 0 else 0
-            cash_weight = (user_safe_cash / total_net_asset) * 100 if total_net_asset > 0 else 0
-
-            c_w1, c_w2, c_w3, c_w4 = st.columns(4)
-            c_w1.metric(f"{stock_name} 보유 수량", f"{total_shares:,}주")
-            c_w2.metric("주식 평가금액", f"{current_stock_value:,}원", f"{stock_weight:.1f}%")
-            c_w3.metric("안전금고 현금", f"{user_safe_cash:,}원", f"{cash_weight:.1f}%")
-            c_w4.metric("종목 총자산 평가액", f"{total_net_asset:,}원")
-
-            st.progress(stock_weight / 100.0, text=f"({stock_name}) 총자산 기준 주식 비중: {stock_weight:.1f}% / 현금 비중: {cash_weight:.1f}%")
-
         # 핵심 가격 요약 카드
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("현재가 (B1)", f"{s['B1']:,}원", f"{s['cur_chg']:+.2f}%")
@@ -484,4 +440,4 @@ if stock_code:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
     else:
-        st.error("종목 데이터를 불러오지 못했습니다. 올바른 6자리 종목코드(예: 233740, 005930)를 입력해 주세요.")
+        st.error("종목 데이터를 불러오지 못했습니다. 올바른 종목명이나 6자리 종목코드를 입력해 주세요.")
