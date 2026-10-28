@@ -7,7 +7,7 @@ from io import BytesIO
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="울티마(U-Point) 자동 분석기",
+    page_title="자동 분석기",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 울티마(U-Point) 모바일 자동 계산기")
+st.subheader("📈 모바일 자동 계산기")
 
 # KRX 종목 리스트 캐싱 (종목명/코드 자동 검색용)
 @st.cache_data(ttl=86400)
@@ -40,8 +40,8 @@ col_in1, col_in2 = st.columns([2, 1])
 with col_in1:
     user_input = st.text_input(
         "🔍 종목코드(6자리) 또는 종목명 입력",
-        value="137400",
-        placeholder="예: 137400, 피엔티, 에이스테크, 005930"
+        value="244740",
+        placeholder="예: 005930, 삼성전자"
     ).strip()
 with col_in2:
     years_back = st.selectbox("조회 기간", options=[3, 4, 5], index=0, format_func=lambda x: f"최근 {x}년")
