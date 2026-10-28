@@ -7,7 +7,7 @@ from io import BytesIO
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="간편 교대 매매 분석기",
+    page_title="간편 교대 매매 분석기 Pro+",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (7단계 매수 ⇄ 마이너스 회복 익절)")
+st.subheader("📈 간편 교대 매매 시스템 (종목별 잔고 요약 & 계좌 현황판 연동)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -72,7 +72,7 @@ name_to_code = {
     "현대차": "005380"
 }
 
-# 🔍 엔터 입력 및 버튼 클릭이 매끄럽게 작동하는 검색 Form (placeholder 수정 완료)
+# 🔍 엔터 입력 및 버튼 클릭이 매끄럽게 작동하는 검색 Form
 with st.form(key="search_form"):
     col_in1, col_in2, col_in3 = st.columns([2, 1, 1])
     with col_in1:
@@ -333,6 +333,28 @@ if stock_code:
             </p>
         </div>
         """, unsafe_allow_html=True)
+
+        # 💼 [대안 2번 적용] 수동 입력 기반 '내 계좌 잔고 현황판' (에러 없음 & 100% 정확)
+        with st.expander("💼 [자산 관리] 내 계좌 실제 잔고 현황판 (수동 입력)", expanded=True):
+            col_ac1, col_ac2, col_ac3 = st.columns(3)
+            with col_ac1:
+                real_stock_val = st.number_input("내 주식 총 평가금액 (원)", min_value=0, value=27000000, step=1000000, format="%d")
+            with col_ac2:
+                real_cash_val = st.number_input("현재 예수금 / 안전금고 (원)", min_value=0, value=3000000, step=500000, format="%d")
+            with col_ac3:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                st.caption("증권사 앱 잔고를 그대로 입력하세요.")
+
+            total_real_asset = real_stock_val + real_cash_val
+            real_stock_w = (real_stock_val / total_real_asset) * 100 if total_real_asset > 0 else 0
+            real_cash_w = (real_cash_val / total_real_asset) * 100 if total_real_asset > 0 else 0
+
+            rc1, rc2, rc3 = st.columns(3)
+            rc1.metric("실제 주식 평가금", f"{real_stock_val:,}원", f"{real_stock_w:.1f}%")
+            rc2.metric("보유 현금/예수금", f"{real_cash_val:,}원", f"{real_cash_w:.1f}%")
+            rc3.metric("내 계좌 총자산", f"{total_real_asset:,}원")
+
+            st.progress(real_stock_w / 100.0, text=f"실제 계좌 주식 비중: {real_stock_w:.1f}% / 현금 비중: {real_cash_w:.1f}%")
 
         # 핵심 가격 요약 카드
         c1, c2, c3, c4 = st.columns(4)
