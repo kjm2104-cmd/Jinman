@@ -4,12 +4,10 @@ import numpy as np
 import FinanceDataReader as fdr
 from datetime import datetime, timedelta
 from io import BytesIO
-from openpyxl.formatting.rule import ColorScaleRule
-from openpyxl.utils import get_column_letter
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="모바일 주식 분석기",
+    page_title="시소 교대 매매 시스템",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -24,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 모바일 주식 분석기 (시소 교대 매매 시스템)")
+st.subheader("📈 S값 연동 15분할 매수 ⇄ S값 회복 5분할 매도 시스템")
 
 # KRX 종목 리스트 캐싱
 @st.cache_data(ttl=86400)
@@ -99,13 +97,10 @@ def style_table(df_target, df_full):
                     styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: 900; padding: 2px 6px; border-radius: 12px; display: inline-block;' if s_num > 0 else ('background-color: #BBDEFB; color: #0D47A1; font-weight: 900; padding: 2px 6px; border-radius: 12px; display: inline-block;' if s_num < 0 else 'background-color: #E0E0E0; color: #333333; font-weight: bold;')
                 except:
                     pass
-            elif col_name == '매수신호(레버리지/인버스)':
-                if '10차' in str(val): styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
-                elif '8차' in str(val) or '9차' in str(val): styles[idx] = 'background-color: #D32F2F; color: #FFFFFF; font-weight: bold;'
-                elif '6차' in str(val) or '7차' in str(val): styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: bold;'
-                elif '4차' in str(val) or '5차' in str(val): styles[idx] = 'background-color: #FFE0B2; color: #E65100; font-weight: bold;'
-                elif '1차' in str(val) or '2차' in str(val) or '3차' in str(val): styles[idx] = 'background-color: #FFF9C4; color: #F57F17; font-weight: bold;'
-                elif '스위칭' in str(val): styles[idx] = 'background-color: #E3F2FD; color: #0D47A1; font-weight: bold;'
+            elif col_name == '매매신호(레버리지/인버스)':
+                if '15차' in str(val) or '최종매도' in str(val): styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
+                elif '매수' in str(val): styles[idx] = 'background-color: #D32F2F; color: #FFFFFF; font-weight: bold;'
+                elif '매도' in str(val): styles[idx] = 'background-color: #E3F2FD; color: #0D47A1; font-weight: bold;'
             elif col_name in cols_grad:
                 try:
                     v = float(val)
@@ -168,33 +163,91 @@ def calculate_indicator_sheet(df_raw):
         lm = int(round((p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
         s_val = lm - mm
 
-        if s_val <= -50:
-            sig = "🔥 10차 풀베팅 (바닥)"
+        # 추천 2번: S값 연동 15분할 매수 ⇄ S값 회복 5분할 매도 규칙
+        if s_val <= -55:
+            sig = "🔥 15차 풀베팅 (바닥 100%)"
             invest_pct = "레버리지 100% (3,000만)"
             cash_pct = "현금 0원"
-        elif s_val <= -40:
-            sig = "🚨 8~9차 매수"
-            invest_pct = "레버리지 80~90%"
-            cash_pct = "현금 10~20%"
-        elif s_val <= -30:
-            sig = "⚠️ 6~7차 매수"
-            invest_pct = "레버리지 60~70%"
-            cash_pct = "현금 30~40%"
-        elif s_val <= -20:
-            sig = "⚠️ 4~5차 매수"
-            invest_pct = "레버리지 40~50%"
-            cash_pct = "현금 50~60%"
-        elif s_val <= -10:
-            sig = "🔍 1~3차 입질"
-            invest_pct = "레버리지 10~30%"
-            cash_pct = "현금 70~90%"
-        elif s_val >= 20:
-            sig = "🔄 인버스 스위칭"
+        elif s_val <= -51:
+            sig = "🚨 14차 매수 (10%)"
+            invest_pct = "레버리지 98%"
+            cash_pct = "현금 2%"
+        elif s_val <= -47:
+            sig = "🚨 13차 매수 (10%)"
+            invest_pct = "레버리지 88%"
+            cash_pct = "현금 12%"
+        elif s_val <= -43:
+            sig = "🚨 12차 매수 (9%)"
+            invest_pct = "레버리지 78%"
+            cash_pct = "현금 22%"
+        elif s_val <= -39:
+            sig = "⚠️ 11차 매수 (9%)"
+            invest_pct = "레버리지 69%"
+            cash_pct = "현금 31%"
+        elif s_val <= -35:
+            sig = "⚠️ 10차 매수 (8%)"
+            invest_pct = "레버리지 60%"
+            cash_pct = "현금 40%"
+        elif s_val <= -31:
+            sig = "⚠️ 9차 매수 (8%)"
+            invest_pct = "레버리지 52%"
+            cash_pct = "현금 48%"
+        elif s_val <= -27:
+            sig = "⚠️ 8차 매수 (7%)"
+            invest_pct = "레버리지 44%"
+            cash_pct = "현금 56%"
+        elif s_val <= -23:
+            sig = "⚠️ 7차 매수 (7%)"
+            invest_pct = "레버리지 37%"
+            cash_pct = "현금 63%"
+        elif s_val <= -19:
+            sig = "🔍 6차 매수 (6%)"
+            invest_pct = "레버리지 30%"
+            cash_pct = "현금 70%"
+        elif s_val <= -15:
+            sig = "🔍 5차 매수 (6%)"
+            invest_pct = "레버리지 24%"
+            cash_pct = "현금 76%"
+        elif s_val <= -12:
+            sig = "🔍 4차 매수 (5%)"
+            invest_pct = "레버리지 18%"
+            cash_pct = "현금 82%"
+        elif s_val <= -9:
+            sig = "🔍 3차 매수 (5%)"
+            invest_pct = "레버리지 13%"
+            cash_pct = "현금 87%"
+        elif s_val <= -6:
+            sig = "🔍 2차 매수 (4%)"
+            invest_pct = "레버리지 8%"
+            cash_pct = "현금 92%"
+        elif s_val <= -3:
+            sig = "🔍 1차 입질 (4%)"
+            invest_pct = "레버리지 4%"
+            cash_pct = "현금 96%"
+        # 추천 2번: S값 회복에 따른 5분할 매도 규칙
+        elif s_val >= 25:
+            sig = "🔥 5차 최종매도 & 인버스완성 (50%)"
             invest_pct = "인버스 50% (최대 1,500만)"
-            cash_pct = "현금 50% (안전 보유)"
+            cash_pct = "현금 50%"
+        elif s_val >= 18:
+            sig = "✨ 4차 매도 (누적 80% 익절)"
+            invest_pct = "레버리지 20% 잔여"
+            cash_pct = "현금 80%"
+        elif s_val >= 12:
+            sig = "✨ 3차 매도 (누적 60% 익절 + 인버스 1차)"
+            invest_pct = "레버리지 40% 잔여"
+            cash_pct = "현금 60%"
+        elif s_val >= 6:
+            sig = "✨ 2차 매도 (누적 40% 익절)"
+            invest_pct = "레버리지 60% 잔여"
+            cash_pct = "현금 40%"
+        elif s_val >= 1:
+            sig = "✨ 1차 매도 (누적 20% 익절)"
+            invest_pct = "레버리지 80% 잔여"
+            cash_pct = "현금 20%"
         else:
-            sig = "대기 및 관망"
-            invest_pct = "중립 구간"
+            sig = "중립 대기 구간"
+            invest_pct = "기존 비중 유지"
             cash_pct = "현금 대기"
 
         d_cur = pd.Timestamp(dates[i])
@@ -256,14 +309,53 @@ if stock_code:
         c3.metric("목표 포트폴리오 비중", s['invest_pct'])
         c4.metric("안전 대기 현금", s['cash_pct'])
 
-        tab1, tab2, tab3 = st.tabs(["📊 10분할 매매 표", "📝 간이 매매일지 (영구 저장)", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 추천 2번 매매 가이드", "📝 매매일지 (영구 저장)", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 S값 기준 [1차 입질 ~ 10차 풀베팅] 및 [인버스 50% 제한 스위칭] 자동 반영")
+            st.caption("📈 S값 기준 [15분할 점증형 매수] 및 [S값 회복 5분할 익절 & 인버스 스위칭] 자동 반영")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
         with tab2:
+            st.markdown("##### 📉 [1단계] 하락장 15분할 점증형 매수 가이드 (S값 기준)")
+            buy_guide_data = [
+                {"단계": "1차 입질", "S값 조건": "S ≤ -3", "투입 비중": "4% (120만)", "설명": "하락 초입 가볍게 진입"},
+                {"단계": "2차 매수", "S값 조건": "S ≤ -6", "투입 비중": "4% (120만)", "설명": "조정 시 추가 비중 확대"},
+                {"단계": "3차 매수", "S값 조건": "S ≤ -9", "투입 비중": "5% (150만)", "설명": "비중 예열 시작"},
+                {"단계": "4차 매수", "S값 조건": "S ≤ -12", "투입 비중": "5% (150만)", "설명": "분할 매집 체계 가동"},
+                {"단계": "5차 매수", "S값 조건": "S ≤ -15", "투입 비중": "6% (180만)", "설명": "초반 안정 방어막"},
+                {"단계": "6차 매수", "S값 조건": "S ≤ -19", "투입 비중": "6% (180만)", "설명": "하락폭 심화 구간"},
+                {"단계": "7차 매수", "S값 조건": "S ≤ -23", "투입 비중": "7% (210만)", "설명": "본격적 수량 모으기"},
+                {"단계": "8차 매수", "S값 조건": "S ≤ -27", "투입 비중": "7% (210만)", "설명": "중반 반환점 접근"},
+                {"단계": "9차 매수", "S값 조건": "S ≤ -31", "투입 비중": "8% (240만)", "설명": "공포 속 비중 확대"},
+                {"단계": "10차 매수", "S값 조건": "S ≤ -35", "투입 비중": "8% (240만)", "설명": "굵직한 자금 투입"},
+                {"단계": "11차 매수", "S값 조건": "S ≤ -39", "투입 비중": "9% (270만)", "설명": "지하 공포 구간"},
+                {"단계": "12차 매수", "S값 조건": "S ≤ -43", "투입 비중": "9% (270만)", "설명": "과감한 덩치 키우기"},
+                {"단계": "13차 매수", "S값 조건": "S ≤ -47", "투입 비중": "10% (300만)", "설명": "극도의 공포 집중"},
+                {"단계": "14차 매수", "S값 조건": "S ≤ -51", "투입 비중": "10% (300만)", "설명": "바닥 다지기 막바지"},
+                {"단계": "15차 풀베팅", "S값 조건": "S ≤ -55", "투입 비중": "잔여 2% (60만)", "설명": "최종 바닥 (레버리지 100%)"},
+            ]
+            st.dataframe(pd.DataFrame(buy_guide_data), use_container_width=True)
+
+            st.markdown("---")
+            st.markdown("##### 📈 [2단계] S값 회복 기준 5분할 매도 & 인버스 연동 가이드 (추천 2번)")
+            st.info("앱 화면에 표시되는 S값 숫자를 확인하고 아래 단계별로 기계적인 익절 및 인버스 스위칭을 실행하세요.")
+
+            current_s = float(s['S'])
+            
+            def get_s_status(min_s):
+                return "🟢 도달 완료 (실행)" if current_s >= min_s else "⚪ 대기 중"
+
+            sell_guide_data = [
+                {"단계": "1차 매도 (20% 익절)", "S값 조건": "S ≥ +1", "진행 상태": get_s_status(1), "인버스 연동": "현금 확보 (대기)"},
+                {"단계": "2차 매도 (20% 익절)", "S값 조건": "S ≥ +6", "진행 상태": get_s_status(6), "인버스 연동": "현금 확보 (대기)"},
+                {"단계": "3차 매도 (20% 익절)", "S값 조건": "S ≥ +12", "진행 상태": get_s_status(12), "인버스 연동": "인버스 1차 진입"},
+                {"단계": "4차 매도 (20% 익절)", "S값 조건": "S ≥ +18", "진행 상태": get_s_status(18), "인버스 연동": "인버스 2차 추가"},
+                {"단계": "5차 최종 (잔여 20%)", "S값 조건": "S ≥ +25", "진행 상태": get_s_status(25), "인버스 연동": "인버스 완성 (총 1,500만 / 50%)"},
+            ]
+            st.dataframe(pd.DataFrame(sell_guide_data), use_container_width=True)
+
+        with tab3:
             st.markdown("##### 📝 실시간 모바일 매매일지 (브라우저 세션 저장)")
             
             if 'trade_logs' not in st.session_state:
@@ -275,21 +367,17 @@ if stock_code:
                     t_date = st.date_input("거래 일자", datetime.today())
                     t_종목 = st.text_input("종목명", value=f"{stock_name} ({stock_code})")
                 with col_f2:
-                    t_type = st.selectbox("매매 구분", ["레버리지 1~3차 입질", "레버리지 4~7차 추가매수", "레버리지 8~10차 풀베팅", "인버스 스위칭 진입(50%)", "전량 청산 및 현금화"])
+                    t_type = st.selectbox("매매 구분", ["레버리지 1~5차 매수", "레버리지 6~10차 매수", "레버리지 11~15차 풀베팅", "레버리지 1~2차 매도(익절)", "레버리지 3~5차 매도(익절)", "인버스 스위칭 진입(50%)", "전량 청산 및 현금화"])
                     t_price = st.number_input("체결 가격 (원)", min_value=0, value=int(s['B1']), step=100)
                 
                 t_amt = st.number_input("투자 금액 (원)", min_value=0, value=3000000, step=100000)
-                t_memo = st.text_input("메모 (예: S값 -32 진입, 분할 매수)", placeholder="특이사항이나 매매 사유 입력")
+                t_memo = st.text_input("메모", placeholder="특이사항이나 매매 사유 입력")
                 
                 submitted = st.form_submit_button("매매일지 저장하기")
                 if submitted:
                     new_log = {
-                        "일자": str(t_date),
-                        "종목": t_종목,
-                        "구분": t_type,
-                        "체결가": f"{t_price:,}원",
-                        "투자금": f"{t_amt:,}원",
-                        "메모": t_memo
+                        "일자": str(t_date), "종목": t_종목, "구분": t_type,
+                        "체결가": f"{t_price:,}원", "투자금": f"{t_amt:,}원", "메모": t_memo
                     }
                     st.session_state.trade_logs.insert(0, new_log)
                     st.success("매매일지가 세션에 안전하게 저장되었습니다!")
@@ -304,9 +392,9 @@ if stock_code:
                     st.session_state.trade_logs = []
                     st.rerun()
             else:
-                st.info("아직 저장된 매매일지가 없습니다. 위 폼을 통해 첫 기록을 남겨보세요!")
+                st.info("아직 저장된 매매일지가 없습니다.")
 
-        with tab3:
+        with tab4:
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_result.to_excel(writer, index=False, sheet_name="Trading_System")
