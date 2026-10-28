@@ -66,33 +66,53 @@ def r10(val):
 
 def style_table(df_target, df_full):
     """
-    1. 등락률(C): 양수 붉은색, 음수 파란색
-    2. MM, PM, LM, S, RM: 붉은색 그라데이션 히트맵 (S값을 진하게 특히 강조)
+    1. 종가(B), 등락률(C): 전일 대비 상승(붉은색), 하락(파란색), 보합(검은색)
+    2. S값 및 MM, PM, LM, RM: 시인성 높은 그라데이션 및 S값 강조
     """
-    cols_grad = ['MM', 'PM', 'LM', 'S', 'RM']
+    cols_grad = ['MM', 'PM', 'LM', 'RM']
     col_bounds = {}
     for c in cols_grad:
         vals = pd.to_numeric(df_full[c], errors='coerce')
         col_bounds[c] = (vals.min(), vals.max())
 
-    def color_styler(row):
+    def color_styler(row_idx, row):
         styles = [''] * len(row)
+        
+        # 전일 종가와 비교하기 위한 직전 행 가격 구하기 (df_full 기준)
+        curr_close = row['종가(B)']
+        prev_close = None
+        if row_idx > 0:
+            prev_close = df_full.iloc[row_idx - 1]['종가(B)']
+
         for idx, col_name in enumerate(row.index):
             val = row[col_name]
             
-            # ① 등락률(C열): 오르면 붉은색, 내리면 파란색
-            if col_name == '등락률(C)':
-                if isinstance(val, str) and '%' in val:
-                    try:
-                        num = float(val.replace('%', '').replace('+', ''))
-                        if num > 0:
-                            styles[idx] = 'color: #D32F2F; font-weight: bold;'
-                        elif num < 0:
-                            styles[idx] = 'color: #1976D2; font-weight: bold;'
-                    except:
-                        pass
+            # ① 종가(B) 및 등락률(C): 상승 붉은색, 하락 파란색, 보합 검은색
+            if col_name in ['종가(B)', '등락률(C)']:
+                if prev_close is not None:
+                    if curr_close > prev_close:
+                        styles[idx] = 'color: #D32F2F; font-weight: bold;'
+                    elif curr_close < prev_close:
+                        styles[idx] = 'color: #1976D2; font-weight: bold;'
+                    else:
+                        styles[idx] = 'color: #111111; font-weight: normal;'
+                else:
+                    styles[idx] = 'color: #111111;'
 
-            # ② MM, PM, LM, S, RM 열: 그라데이션 및 S값 특별 강조
+            # ② 특히 중요하게 보시는 S값 컬럼 스타일링
+            elif col_name == 'S':
+                try:
+                    s_num = float(val)
+                    if s_num > 0:
+                        styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: 900;'
+                    elif s_num < 0:
+                        styles[idx] = 'background-color: #BBDEFB; color: #0D47A1; font-weight: 900;'
+                    else:
+                        styles[idx] = 'background-color: #F5F5F5; color: #333333; font-weight: bold;'
+                except:
+                    pass
+
+            # ③ MM, PM, LM, RM 열: 붉은색 농도 그라데이션 히트맵
             elif col_name in cols_grad:
                 try:
                     v = float(val)
@@ -100,29 +120,27 @@ def style_table(df_target, df_full):
                     ratio = 0.0 if vmax == vmin else (v - vmin) / (vmax - vmin)
                     ratio = max(0.0, min(1.0, float(ratio)))
                     
-                    if col_name == 'S':
-                        # S값은 눈에 확 띄도록 강한 대비 색상 적용
-                        if v >= 0:
-                            styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: 900;'
-                        else:
-                            styles[idx] = 'background-color: #BBDEFB; color: #0D47A1; font-weight: 900;'
-                    else:
-                        r = int(255 - ratio * (255 - 198))
-                        g = int(245 - ratio * (245 - 28))
-                        b = int(245 - ratio * (245 - 28))
-                        txt_color = '#FFFFFF' if ratio > 0.45 else '#111111'
-                        fw = 'bold' if ratio > 0.4 else 'normal'
-                        styles[idx] = f'background-color: #{r:02x}{g:02x}{b:02x}; color: {txt_color}; font-weight: {fw};'
+                    r = int(255 - ratio * (255 - 198))
+                    g = int(245 - ratio * (245 - 28))
+                    b = int(245 - ratio * (245 - 28))
+                    txt_color = '#FFFFFF' if ratio > 0.45 else '#111111'
+                    fw = 'bold' if ratio > 0.4 else 'normal'
+                    styles[idx] = f'background-color: #{r:02x}{g:02x}{b:02x}; color: {txt_color}; font-weight: {fw};'
                 except:
                     pass
         return styles
 
-    return df_target.style.apply(color_styler, axis=1).format({
-        '종가(B)': '{:,}',
-        '중심선(D)': '{:,}',
-        '거래량(E)': '{:,}',
-        '거래비율(F)': '{:.2f}'
-    })
+    # 행 단위로 인덱스를 전달하여 스타일 적용
+    return (
+        df_target.style
+        .apply(lambda row: color_styler(row.name, row), axis=1)
+        .format({
+            '종가(B)': '{:,}',
+            '중심선(D)': '{:,}',
+            '거래량(E)': '{:,}',
+            '거래비율(F)': '{:.2f}'
+        })
+    )
 
 def calculate_ultima_sheet(df_raw):
     df = df_raw.copy().reset_index(drop=True)
@@ -357,7 +375,7 @@ if stock_code:
         ])
 
         with tab1:
-            st.caption("📈 주가 상승일(등락률 붉은색) / 하락일(파란색) 및 S값과 MM~RM 열의 시인성 강조 스타일이 적용되었습니다.")
+            st.caption("📈 종가 및 등락률: 상승(붉은색) / 하락(파란색) / 보합(검은색) | S값과 3M 지표 강조 스타일 적용")
             df_rev = df_result.iloc[::-1]
             styled_all = style_table(df_rev, df_result)
             st.dataframe(styled_all, use_container_width=True, height=520)
@@ -395,7 +413,7 @@ if stock_code:
                 df_result.to_excel(writer, index=False, sheet_name=sheet_title)
                 ws = writer.sheets[sheet_title]
                 max_row = len(df_result) + 1
-                for col_name in ['MM', 'PM', 'LM', 'S', 'RM']:
+                for col_name in ['MM', 'PM', 'LM', 'RM']:
                     col_idx = df_result.columns.get_loc(col_name) + 1
                     col_letter = get_column_letter(col_idx)
                     cell_range = f"{col_letter}2:{col_letter}{max_row}"
