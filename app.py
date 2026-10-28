@@ -67,7 +67,7 @@ with col_in1:
     user_input = st.text_input(
         "🔍 조회할 종목코드(6자리) 입력",
         value="233740",
-        placeholder="예: 233740 또는 005930"
+        placeholder="예: 삼성전자 또는 005930"
     ).strip()
 with col_in2:
     years_back = st.selectbox("조회 기간", options=[1, 2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
@@ -303,24 +303,26 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 💼 [다종목 분리 연동형 총자산 대시보드]
-        with st.expander(f"💼 [자산 관리] '{stock_name} ({stock_code})' 수량 및 총자산 대시보드", expanded=True):
+        # 💼 [종목별 독립 수량 완벽 분리 대시보드]
+        with st.expander(f"💼 [자산 관리] '{stock_name} ({stock_code})' 수량 및 실시간 총자산 대시보드", expanded=True):
             col_as1, col_as2 = st.columns(2)
             with col_as1:
                 user_safe_cash = st.number_input("고정 안전금고 현금 (원)", min_value=0, value=3000000, step=500000, format="%d", key="safe_cash_input")
             with col_as2:
-                only_current_stock = st.checkbox("현재 조회 중인 종목 수량만 반영", value=True, help="체크 시 현재 화면에 입력된 종목(코드 또는 이름)의 매매일지 수량만 합산합니다.")
+                filter_mode = st.radio("수량 집계 방식", ["현재 조회 중인 종목만 계산", "전체 종목 합산 계산"], index=0, horizontal=True)
 
-            # 매매일지 기반 종목별 보유 주식 수량 계산
+            # 매매일지 기반 종목별 보유 주식 수량 계산 (정밀 매칭)
             total_shares = 0
             if 'trade_logs' in st.session_state and st.session_state.trade_logs:
                 for lg in st.session_state.trade_logs:
                     g = lg.get('구분', '')
                     item_name = str(lg.get('종목', ''))
                     
-                    # 현재 조회 중인 종목과 일치하는 내역만 필터링
-                    if only_current_stock and (stock_code not in item_name and stock_name not in item_name):
-                        continue
+                    # 현재 조회 중인 종목만 필터링할 때 조건 검사 (코드 또는 이름 포함 여부)
+                    if filter_mode == "현재 조회 중인 종목만 계산":
+                        is_match = (stock_code in item_name) or (stock_name in item_name)
+                        if not is_match:
+                            continue
 
                     try:
                         qty = int(lg.get('수량', 0))
@@ -332,7 +334,7 @@ if stock_code:
                     elif '익절' in g or '청산' in g:
                         total_shares = max(0, total_shares - qty)
 
-            # 주식 평가금액 = 현재가(B1) * 해당 종목 보유 수량
+            # 주식 평가금액 = 현재가(B1) * 현재 조회 중인 종목의 보유 수량
             current_stock_value = s['B1'] * total_shares
             total_net_asset = current_stock_value + user_safe_cash
             stock_weight = (current_stock_value / total_net_asset) * 100 if total_net_asset > 0 else 0
