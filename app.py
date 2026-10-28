@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 모바일 가독성 및 컬러 스타일링 CSS
+# 모바일 가독성 및 태그(Badge) 스타일링 CSS
 st.markdown("""
 <style>
     .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
@@ -107,20 +107,20 @@ def style_table(df_target, df_full):
                 else:
                     styles[idx] = 'color: #111111;'
 
-            # ② S값 스타일 강조 (제안 1 반영: 양수 연한 붉은색 박스 / 음수 연한 파란색 박스)
+            # ② S값 태그(Badge) 스타일 적용 ([제안 3])
             elif col_name == 'S':
                 try:
                     s_num = float(val)
                     if s_num > 0:
-                        styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: 950; border-radius: 4px;'
+                        styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: 900; padding: 2px 6px; border-radius: 12px; display: inline-block;'
                     elif s_num < 0:
-                        styles[idx] = 'background-color: #BBDEFB; color: #0D47A1; font-weight: 950; border-radius: 4px;'
+                        styles[idx] = 'background-color: #BBDEFB; color: #0D47A1; font-weight: 900; padding: 2px 6px; border-radius: 12px; display: inline-block;'
                     else:
-                        styles[idx] = 'background-color: #F5F5F5; color: #333333; font-weight: bold;'
+                        styles[idx] = 'background-color: #E0E0E0; color: #333333; font-weight: bold; padding: 2px 6px; border-radius: 12px;'
                 except:
                     pass
 
-            # ③ MM, PM, LM, RM 열: 히트맵 붉은색 농도 그라데이션
+            # ③ MM, PM, LM, RM 열: 알약 모양 태그형 스타일 적용
             elif col_name in cols_grad:
                 try:
                     v = float(val)
@@ -128,12 +128,12 @@ def style_table(df_target, df_full):
                     ratio = 0.0 if vmax == vmin else (v - vmin) / (vmax - vmin)
                     ratio = max(0.0, min(1.0, float(ratio)))
                     
-                    r = int(255 - ratio * (255 - 198))
-                    g = int(245 - ratio * (245 - 28))
-                    b = int(245 - ratio * (245 - 28))
-                    txt_color = '#FFFFFF' if ratio > 0.45 else '#111111'
+                    r = int(255 - ratio * (255 - 220))
+                    g = int(240 - ratio * (240 - 80))
+                    b = int(240 - ratio * (240 - 80))
+                    txt_color = '#FFFFFF' if ratio > 0.5 else '#222222'
                     fw = 'bold' if ratio > 0.4 else 'normal'
-                    styles[idx] = f'background-color: #{r:02x}{g:02x}{b:02x}; color: {txt_color}; font-weight: {fw};'
+                    styles[idx] = f'background-color: #{r:02x}{g:02x}{b:02x}; color: {txt_color}; font-weight: {fw}; padding: 2px 6px; border-radius: 8px;'
                 except:
                     pass
         return styles
@@ -382,7 +382,7 @@ if stock_code:
         ])
 
         with tab1:
-            st.caption("📈 종가 및 등락률: 전일 대비 상승(붉은색) / 하락(파란색) / 보합(검은색) | S값 박스 강조 및 MM~RM 히트맵 적용")
+            st.caption("🏷️ 태그형 카드 스타일(S값 및 MM~RM 알약 배지 디자인)이 적용되었습니다.")
             df_rev = df_result.iloc[::-1]
             styled_all = style_table(df_rev, df_result)
             st.dataframe(styled_all, use_container_width=True, height=520)
@@ -432,7 +432,7 @@ if stock_code:
                     ws.conditional_formatting.add(cell_range, rule)
 
             st.download_button(
-                label=f"📥 {stock_name}({stock_code}) 색상 적용 엑셀(.xlsx) 다운로드",
+                label=f"📥 {stock_name}({stock_code}) 태그형 디자인 엑셀(.xlsx) 다운로드",
                 data=output.getvalue(),
                 file_name=f"모바일분석기_{stock_name}_{stock_code}_{datetime.today().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
