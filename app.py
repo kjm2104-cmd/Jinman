@@ -26,21 +26,25 @@ st.markdown("""
 
 st.subheader("📈 간편 교대 매매 시스템 (구글 스프레드시트 실시간 연동)")
 
-# 🔗 구글 스프레드시트 연결 함수 (Streamlit Secrets 또는 로컬 인증 연동)
-def get_gspread_client():
+# 🔗 구글 스프레드시트 연동 함수 (시트에서 데이터를 불러오고 저장하는 역할)
+@st.cache_resource
+def get_gsheet_connection():
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
     try:
-        # Streamlit Cloud의 secrets에 등록된 경우
+        # Streamlit secrets에 저장된 서비스 계정 정보 연동
         if "gcp_service_account" in st.secrets:
             creds_dict = dict(st.secrets["gcp_service_account"])
             creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
             client = gspread.authorize(creds)
-            return client
+            # 사용자가 제공한 구글 스프레드시트 URL
+            sheet_url = "https://docs.google.com/spreadsheets/d/14_iZl-8eS3nV7PW2JB7LSODbAE_Llf_DX0Do6ogBxes/edit?gid=0#gid=0"
+            sheet = client.open_by_url(sheet_url).sheet1
+            return sheet
     except Exception as e:
-        pass
+        return None
     return None
 
 # 네이버 금융 일별 시세 크롤링 함수
@@ -315,224 +319,4 @@ def calculate_indicator_sheet(df_raw):
         'MM': mm_list[-1], 'PM': pm_list[-1], 'LM': lm_list[-1], 'S': s_list[-1],
         'current_signal': buy_signals[-1], 'invest_pct': invest_pct, 'cash_pct': cash_pct,
         'invest_ratio': invest_ratio,
-        'state': "상승 파동 중" if state == 'UP' else "하락 파동 중"
-    }
-    return df_out, summary
-
-# 데이터 로드 처리
-if stock_code:
-    days_count = years_back * 250
-    with st.spinner(f"[{stock_name} ({stock_code})] 네이버 금융에서 데이터를 불러오는 중입니다..."):
-        raw_df = get_naver_stock_data(stock_code, count=days_count)
-
-    if raw_df is not None and not raw_df.empty:
-        df_result, s = calculate_indicator_sheet(raw_df)
-
-        current_s_val = s['S']
-        if current_s_val <= -3:
-            action_title = "📉 [하락장 매수 모드]"
-            action_desc = f"현재 S값({current_s_val})이 하락 구간입니다. 7단계 매수 플랜에 맞춰 비중별로 매수를 진행하세요."
-            badge_color = "#D32F2F"
-        elif current_s_val >= -35:
-            action_title = "📈 [상승장 익절 모드]"
-            action_desc = f"현재 S값({current_s_val})이 마이너스 회복 구간입니다. S값 회복 5분할 익절 규칙에 따라 현금화를 실행하세요."
-            badge_color = "#1976D2"
-        else:
-            action_title = "⚖️ [중립 관망 모드]"
-            action_desc = f"현재 S값({current_s_val})은 대기 구간입니다. 다음 신호를 기다리세요."
-            badge_color = "#555555"
-
-        st.markdown(f"""
-        <div style="background-color: #F8F9FA; border-left: 5px solid {badge_color}; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
-            <h4 style="margin: 0; color: {badge_color};">{action_title} ➔ <b>{s['current_signal']}</b></h4>
-            <p style="margin: 8px 0 0 0; color: #333333; font-size: 0.95rem;">
-                <b>[실전 가이드]</b> {action_desc}<br>
-                추천 포트폴리오 비중 ➔ <b>{s['invest_pct']}</b> ({s['cash_pct']})
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        if 'portfolio_items' not in st.session_state:
-            st.session_state.portfolio_items = [
-                {"id": 1, "name": "KODEX 코스닥150레버리지", "qty": 5000, "price": int(s['B1']) if stock_code == "233740" else 10000},
-                {"id": 2, "name": "삼성전자", "qty": 4, "price": 70000 if stock_code != "005930" else int(s['B1'])}
-            ]
-        
-        top_total_stock_eval = 0
-        for item in st.session_state.portfolio_items:
-            p = int(s['B1']) if (stock_code in item["name"] or stock_name in item["name"]) else item["price"]
-            top_total_stock_eval += item["qty"] * p
-        
-        top_account_cash = 3000000
-        top_total_asset = top_total_stock_eval + top_account_cash
-
-        # 상단 핵심 요약 카드
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("현재가 (B1)", f"{s['B1']:,}원", f"{s['cur_chg']:+.2f}%")
-        c2.metric("S값 지표", f"S: {s['S']}", f"MM:{s['MM']} / LM:{s['LM']}")
-        c3.metric("내 계좌 총자산", f"{top_total_asset:,}원", f"주식 {top_total_stock_eval:,}원")
-        c4.metric("매매 모드", s['state'])
-
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 실시간 매매 가이드", "📝 매매일지 & 내 계좌 총자산", "💾 엑셀 다운로드"])
-
-        with tab1:
-            st.caption("📈 S값 기준 [7단계 매수] 및 [마이너스 회복 5분할 익절]이 통합 반영된 마스터 표입니다.")
-            df_rev = df_result.iloc[::-1]
-            st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
-
-        with tab2:
-            st.markdown("##### 📉 [1단계] 실전 7단계 매수 플랜")
-            buy_guide_data = [
-                {"단계": "1차 매수", "S값 조건": "S ≤ -3", "투입 비중": "5%", "설명": "하락 초입 가볍게 입질"},
-                {"단계": "2차 매수", "S값 조건": "S ≤ -7", "투입 비중": "10%", "설명": "조정 시 추가 비중 확대"},
-                {"단계": "3차 매수", "S값 조건": "S ≤ -12", "투입 비중": "15%", "설명": "하락세 깊어질 때 물량 확보"},
-                {"단계": "4차 매수", "S값 조건": "S ≤ -18", "투입 비중": "15%", "설명": "중간 지점 비중 안정적 채우기"},
-                {"단계": "5차 매수", "S값 조건": "S ≤ -25", "투입 비중": "20%", "설명": "깊은 조정 구간 굵직하게 싣기"},
-                {"단계": "6차 매수", "S값 조건": "S ≤ -35", "투입 비중": "20%", "설명": "공포 확산 바닥권 대규모 담기"},
-                {"단계": "7차 풀베팅", "S값 조건": "S ≤ -45", "투입 비중": "15%", "설명": "[최종 바닥] 분할 매수 한도 소진"},
-            ]
-            st.dataframe(pd.DataFrame(buy_guide_data), use_container_width=True)
-
-            st.markdown("---")
-            st.markdown("##### 📈 [2단계] 마이너스 회복 구간 5분할 익절 가이드")
-            st.info("마이너스 회복 구간(-35 ~ 0) 진입 시 아래 S값 조건에 따라 단계별 현금화를 실행하세요.")
-
-            current_s = float(s['S'])
-            
-            def get_minus_status(min_s):
-                return "🟢 도달 완료 (실행)" if current_s >= min_s else "⚪ 대기 중"
-
-            sell_guide_data = [
-                {"단계": "1차 익절 (20% 현금화)", "S값 회복 조건": "S ≥ -35", "진행 상태": get_minus_status(-35), "설명": "지하 탈출 첫 번째 반등 시"},
-                {"단계": "2차 익절 (20% 현금화)", "S값 회복 조건": "S ≥ -25", "진행 상태": get_minus_status(-25), "설명": "완만한 회복세 진입 시"},
-                {"단계": "3차 익절 (20% 현금화)", "S값 회복 조건": "S ≥ -15", "진행 상태": get_minus_status(-15), "설명": "중립 구간 향해 상승 시"},
-                {"단계": "4차 익절 (20% 현금화)", "S값 회복 조건": "S ≥ -5", "진행 상태": get_minus_status(-5), "설명": "마이너스 터널 끝자락 도달 시"},
-                {"단계": "5차 최종 (잔여 20%)", "S값 회복 조건": "S ≥ 0 (기준선)", "진행 상태": get_minus_status(0), "설명": "[전량 현금화 완료] 다음 폭락장 대기"},
-            ]
-            st.dataframe(pd.DataFrame(sell_guide_data), use_container_width=True)
-
-        with tab3:
-            st.markdown("##### 📝 내 계좌 종목 잔고 현황 및 구글 시트 연동 매매일지")
-            
-            with st.expander("💼 내 계좌 총자산 잔고 현황판 (종목 추가·삭제 및 실시간 합계)", expanded=True):
-                st.caption("보유 중인 종목을 자유롭게 추가/삭제하고 수량과 단가를 입력하시면 실시간 주식 평가금액과 '내 계좌 총자산'이 계산됩니다.")
-                
-                if 'portfolio_items' not in st.session_state:
-                    st.session_state.portfolio_items = [
-                        {"id": 1, "name": "KODEX 코스닥150레버리지", "qty": 5000, "price": int(s['B1']) if stock_code == "233740" else 10000},
-                        {"id": 2, "name": "삼성전자", "qty": 4, "price": 70000 if stock_code != "005930" else int(s['B1'])}
-                    ]
-
-                if st.button("➕ 보유 종목 추가하기"):
-                    new_id = max([item["id"] for item in st.session_state.portfolio_items], default=0) + 1
-                    st.session_state.portfolio_items.append({"id": new_id, "name": f"신규종목{new_id}", "qty": 10, "price": 10000})
-                    st.rerun()
-
-                total_stock_eval = 0
-                items_to_delete = []
-
-                for idx, item in enumerate(st.session_state.portfolio_items):
-                    cols = st.columns([2, 1, 1, 0.6])
-                    with cols[0]:
-                        item["name"] = st.text_input(f"종목명 {idx+1}", value=item["name"], key=f"p_name_{item['id']}")
-                    with cols[1]:
-                        item["qty"] = st.number_input(f"수량 (주) {idx+1}", min_value=0, value=item["qty"], step=1, key=f"p_qty_{item['id']}")
-                    with cols[2]:
-                        item["price"] = st.number_input(f"단가/현재가 {idx+1}", min_value=0, value=item["price"], step=100, key=f"p_price_{item['id']}")
-                    with cols[3]:
-                        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                        if st.button("❌ 삭제", key=f"del_p_{item['id']}"):
-                            items_to_delete.append(item)
-
-                    eval_amt = item["qty"] * item["price"]
-                    total_stock_eval += eval_amt
-
-                if items_to_delete:
-                    for itm in items_to_delete:
-                        st.session_state.portfolio_items.remove(itm)
-                    st.rerun()
-
-                st.markdown("---")
-                account_cash = st.number_input("증권사 계좌 예수금 / 현금 (원)", min_value=0, value=3000000, step=500000, format="%d", key="tab3_cash_dynamic")
-
-                total_account_asset = total_stock_eval + account_cash
-                stock_weight = (total_stock_eval / total_account_asset) * 100 if total_account_asset > 0 else 0
-                cash_weight = (account_cash / total_account_asset) * 100 if total_account_asset > 0 else 0
-
-                rc1, rc2, rc3 = st.columns(3)
-                rc1.metric("주식 총 평가금액", f"{total_stock_eval:,}원", f"{stock_weight:.1f}%")
-                rc2.metric("계좌 예수금/현금", f"{account_cash:,}원", f"{cash_weight:.1f}%")
-                rc3.metric("내 계좌 총자산", f"{total_account_asset:,}원")
-
-                st.progress(stock_weight / 100.0, text=f"포트폴리오 주식 비중: {stock_weight:.1f}% / 현금 비중: {cash_weight:.1f}%")
-
-            st.markdown("---")
-            st.markdown("##### 📝 실시간 매매일지 (구글 스프레드시트 자동 저장)")
-            
-            with st.form("trade_log_form"):
-                col_f1, col_f2 = st.columns(2)
-                with col_f1:
-                    t_date = st.date_input("거래 일자", datetime.today())
-                    t_종목 = st.text_input("종목명", value=f"{stock_name} ({stock_code})")
-                    t_qty = st.number_input("거래 수량 (주)", min_value=0, value=100, step=1)
-                with col_f2:
-                    t_type = st.selectbox("매매 구분", ["레버리지 1~2차 매수 (5%~10%)", "레버리지 3~4차 매수 (15%)", "레버리지 5~6차 매수 (20%)", "레버리지 7차 풀베팅", "마이너스 회복 1~2차 익절", "마이너스 회복 3~5차 익절", "전량 청산 및 현금화", "현금 입금(+)", "현금 출금(-)"])
-                    t_price = st.number_input("체결 가격 / 입출금액 (원)", min_value=0, value=int(s['B1']), step=100)
-                
-                t_amt = st.number_input("투자 금액 / 변동 금액 (원)", min_value=0, value=3000000, step=100000)
-                t_memo = st.text_input("메모", placeholder="특이사항이나 매매 사유 입력")
-                
-                submitted = st.form_submit_button("구글 스프레드시트에 매매일지 저장하기")
-                if submitted:
-                    new_row = [
-                        str(t_date), t_종목, t_type, str(t_qty), 
-                        f"{t_price:,}원", f"{t_amt:,}원", t_memo
-                    ]
-                    
-                    # 구글 시트에 실시간 전송 시도
-                    try:
-                        client = get_gspread_client()
-                        if client:
-                            sheet_url = "https://docs.google.com/spreadsheets/d/14_iZl-8eS3nV7PW2JB7LSODbAE_Llf_DX0Do6ogBxes/edit?gid=0#gid=0"
-                            sheet = client.open_by_url(sheet_url).sheet1
-                            sheet.append_row(new_row)
-                            st.success("🎉 구글 스프레드시트에 매매일지가 실시간으로 안전하게 저장되었습니다!")
-                        else:
-                            st.warning("⚠️ 구글 클라우드 인증(Secrets)이 설정되지 않아 로컬 세션에만 임시 저장됩니다. (Streamlit Cloud Secrets 설정 필요)")
-                    except Exception as e:
-                        st.error(f"구글 시트 저장 중 오류 발생: {e}")
-
-            # 세션 기반 화면 표시용 로직
-            if 'trade_logs' not in st.session_state:
-                st.session_state.trade_logs = []
-
-            if submitted:
-                st.session_state.trade_logs.insert(0, {
-                    "일자": str(t_date), "종목": t_종목, "구분": t_type,
-                    "수량": t_qty, "체결가": f"{t_price:,}원", "투자금": f"{t_amt:,}원", "메모": t_memo
-                })
-
-            if st.session_state.trade_logs:
-                st.markdown("---")
-                st.markdown("##### 📋 현재 세션 저장된 매매일지 내역")
-                log_df = pd.DataFrame(st.session_state.trade_logs)
-                st.dataframe(log_df, use_container_width=True)
-                
-                if st.button("🗑️ 화면 목록 초기화"):
-                    st.session_state.trade_logs = []
-                    st.rerun()
-            else:
-                st.info("아직 이번 세션에 기록된 매매일지 내역이 없습니다. (저장하시면 구글 시트와 함께 실시간으로 쌓입니다)")
-
-        with tab4:
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_result.to_excel(writer, index=False, sheet_name="Trading_System")
-            st.download_button(
-                label=f"📥 {stock_name}({stock_code}) 매매전략 엑셀 다운로드",
-                data=output.getvalue(),
-                file_name=f"모바일분석기_{stock_code}_{datetime.today().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-    else:
-        st.error("종목 데이터를 불러오지 못했습니다. 올바른 종목명이나 6자리 종목코드를 입력해 주세요.")
+        'state': "상승 파동 중" if state == 'UP' else "하락
