@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (종목 자산 동적 관리)")
+st.subheader("📈 간편 교대 매매 시스템 (매매일지 종목별 자산 요약 연동)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -208,42 +208,42 @@ def calculate_indicator_sheet(df_raw):
         if s_val <= -45:
             sig = "🔥 7차 매수 (풀베팅 / 누적 100%)"
             invest_pct = "레버리지 100% (2,700만)"
-            cash_pct = "현금 300만 (안전금고)"
+            cash_pct = "현금 관리"
             invest_ratio = 1.0
         elif s_val <= -35:
             sig = "🚨 6차 매수 (누적 85%)"
             invest_pct = "레버리지 85%"
-            cash_pct = "현금 300만 (안전금고)"
+            cash_pct = "현금 관리"
             invest_ratio = 0.85
         elif s_val <= -25:
             sig = "⚠️ 5차 매수 (누적 65%)"
             invest_pct = "레버리지 65%"
-            cash_pct = "현금 300만 (안전금고)"
+            cash_pct = "현금 관리"
             invest_ratio = 0.65
         elif s_val <= -18:
             sig = "⚠️ 4차 매수 (누적 45%)"
             invest_pct = "레버리지 45%"
-            cash_pct = "현금 300만 (안전금고)"
+            cash_pct = "현금 관리"
             invest_ratio = 0.45
         elif s_val <= -12:
             sig = "🔍 3차 매수 (누적 30%)"
             invest_pct = "레버리지 30%"
-            cash_pct = "현금 300만 (안전금고)"
+            cash_pct = "현금 관리"
             invest_ratio = 0.30
         elif s_val <= -7:
             sig = "🔍 2차 매수 (누적 15%)"
             invest_pct = "레버리지 15%"
-            cash_pct = "현금 300만 (안전금고)"
+            cash_pct = "현금 관리"
             invest_ratio = 0.15
         elif s_val <= -3:
             sig = "🔍 1차 매수 (5%)"
             invest_pct = "레버리지 5%"
-            cash_pct = "현금 300만 (안전금고)"
+            cash_pct = "현금 관리"
             invest_ratio = 0.05
         elif s_val >= 0:
             sig = "🔥 5차 최종익절 (전량 현금화 완료)"
             invest_pct = "레버리지 0% (현금 100%)"
-            cash_pct = "현금 300만 포함 총 3,000만+"
+            cash_pct = "현금 100%"
             invest_ratio = 0.0
         elif s_val >= -5:
             sig = "✨ 4차 익절 (누적 80% 현금화)"
@@ -268,7 +268,7 @@ def calculate_indicator_sheet(df_raw):
         else:
             sig = "중립 대기 구간"
             invest_pct = "기존 비중 유지"
-            cash_pct = "현금 300만 (안전금고)"
+            cash_pct = "현금 관리"
             invest_ratio = 0.50
 
         d_cur = pd.Timestamp(dates[i])
@@ -334,14 +334,14 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 핵심 가격 요약 카드
+        # 상단 메인 페이지는 핵심 지표 카드만 깔끔하게 유지
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("현재가 (B1)", f"{s['B1']:,}원", f"{s['cur_chg']:+.2f}%")
         c2.metric("S값 지표", f"S: {s['S']}", f"MM:{s['MM']} / LM:{s['LM']}")
         c3.metric("포트폴리오 비중", s['invest_pct'])
-        c4.metric("안전 대기 현금", s['cash_pct'])
+        c4.metric("매매 모드", s['state'])
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 실시간 매매 가이드", "📝 매매일지 & 잔고 요약", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 실시간 매매 가이드", "📝 매매일지 & 내 계좌 총자산", "💾 엑셀 다운로드"])
 
         with tab1:
             st.caption("📈 S값 기준 [7단계 매수] 및 [마이너스 회복 5분할 익절]이 통합 반영된 마스터 표입니다.")
@@ -349,15 +349,15 @@ if stock_code:
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
         with tab2:
-            st.markdown("##### 📉 [1단계] 실전 7단계 매수 플랜 (현금 300만 원 고정)")
+            st.markdown("##### 📉 [1단계] 실전 7단계 매수 플랜")
             buy_guide_data = [
-                {"단계": "1차 매수", "S값 조건": "S ≤ -3", "투입 비중": "5% (135만)", "누적 금액": "135만", "설명": "하락 초입 가볍게 입질"},
-                {"단계": "2차 매수", "S값 조건": "S ≤ -7", "투입 비중": "10% (270만)", "누적 금액": "405만", "설명": "조정 시 추가 비중 확대"},
-                {"단계": "3차 매수", "S값 조건": "S ≤ -12", "투입 비중": "15% (405만)", "누적 금액": "810만", "설명": "하락세 깊어질 때 물량 확보"},
-                {"단계": "4차 매수", "S값 조건": "S ≤ -18", "투입 비중": "15% (405만)", "누적 금액": "1,215만", "설명": "중간 지점 비중 안정적 채우기"},
-                {"단계": "5차 매수", "S값 조건": "S ≤ -25", "투입 비중": "20% (540만)", "누적 금액": "1,755만", "설명": "깊은 조정 구간 굵직하게 싣기"},
-                {"단계": "6차 매수", "S값 조건": "S ≤ -35", "투입 비중": "20% (540만)", "누적 금액": "2,295만", "설명": "공포 확산 바닥권 대규모 담기"},
-                {"단계": "7차 풀베팅", "S값 조건": "S ≤ -45", "투입 비중": "15% (405만)", "누적 금액": "2,700만", "설명": "[최종 바닥] 분할 매수 한도 소진 (현금 300만 고정)"},
+                {"단계": "1차 매수", "S값 조건": "S ≤ -3", "투입 비중": "5%", "설명": "하락 초입 가볍게 입질"},
+                {"단계": "2차 매수", "S값 조건": "S ≤ -7", "투입 비중": "10%", "설명": "조정 시 추가 비중 확대"},
+                {"단계": "3차 매수", "S값 조건": "S ≤ -12", "투입 비중": "15%", "설명": "하락세 깊어질 때 물량 확보"},
+                {"단계": "4차 매수", "S값 조건": "S ≤ -18", "투입 비중": "15%", "설명": "중간 지점 비중 안정적 채우기"},
+                {"단계": "5차 매수", "S값 조건": "S ≤ -25", "투입 비중": "20%", "설명": "깊은 조정 구간 굵직하게 싣기"},
+                {"단계": "6차 매수", "S값 조건": "S ≤ -35", "투입 비중": "20%", "설명": "공포 확산 바닥권 대규모 담기"},
+                {"단계": "7차 풀베팅", "S값 조건": "S ≤ -45", "투입 비중": "15%", "설명": "[최종 바닥] 분할 매수 한도 소진"},
             ]
             st.dataframe(pd.DataFrame(buy_guide_data), use_container_width=True)
 
@@ -375,26 +375,24 @@ if stock_code:
                 {"단계": "2차 익절 (20% 현금화)", "S값 회복 조건": "S ≥ -25", "진행 상태": get_minus_status(-25), "설명": "완만한 회복세 진입 시"},
                 {"단계": "3차 익절 (20% 현금화)", "S값 회복 조건": "S ≥ -15", "진행 상태": get_minus_status(-15), "설명": "중립 구간 향해 상승 시"},
                 {"단계": "4차 익절 (20% 현금화)", "S값 회복 조건": "S ≥ -5", "진행 상태": get_minus_status(-5), "설명": "마이너스 터널 끝자락 도달 시"},
-                {"단계": "5차 최종 (잔여 20%)", "S값 회복 조건": "S ≥ 0 (기준선)", "진행 상태": get_minus_status(0), "설명": "[전량 현금화 완료] 현금 300만 원과 함께 다음 폭락장 대기"},
+                {"단계": "5차 최종 (잔여 20%)", "S값 회복 조건": "S ≥ 0 (기준선)", "진행 상태": get_minus_status(0), "설명": "[전량 현금화 완료] 다음 폭락장 대기"},
             ]
             st.dataframe(pd.DataFrame(sell_guide_data), use_container_width=True)
 
         with tab3:
-            st.markdown("##### 📝 실시간 모바일 매매일지 및 다종목 잔고 현황판")
+            st.markdown("##### 📝 내 계좌 종목 잔고 현황 및 실시간 총자산")
             
-            # [동적 종목 추가/삭제가 가능한 잔고 현황판]
-            with st.expander("💼 내 계좌 보유 종목 잔고 현황판 (종목 추가·삭제 및 실시간 합계)", expanded=True):
-                st.caption("필요한 종목을 추가하거나 삭제하고, 보유 수량과 적용 단가를 입력하시면 실시간 총자산과 합계가 계산됩니다.")
+            # 동적 종목 추가/삭제가 가능한 잔고 현황판 및 '내 계좌 총자산' 계산
+            with st.expander("💼 내 계좌 총자산 잔고 현황판 (종목 추가·삭제 및 실시간 합계)", expanded=True):
+                st.caption("보유 중인 종목을 자유롭게 추가/삭제하고 수량과 단가를 입력하시면 실시간 주식 평가금액과 '내 계좌 총자산'이 계산됩니다.")
                 
-                # 세션 상태로 보유 종목 리스트 관리
                 if 'portfolio_items' not in st.session_state:
                     st.session_state.portfolio_items = [
                         {"id": 1, "name": "KODEX 코스닥150레버리지", "qty": 5000, "price": int(s['B1']) if stock_code == "233740" else 10000},
                         {"id": 2, "name": "삼성전자", "qty": 4, "price": 70000 if stock_code != "005930" else int(s['B1'])}
                     ]
 
-                # 종목 추가 버튼
-                if st.button("➕ 종목 추가하기"):
+                if st.button("➕ 보유 종목 추가하기"):
                     new_id = max([item["id"] for item in st.session_state.portfolio_items], default=0) + 1
                     st.session_state.portfolio_items.append({"id": new_id, "name": f"신규종목{new_id}", "qty": 10, "price": 10000})
                     st.rerun()
@@ -418,27 +416,29 @@ if stock_code:
                     eval_amt = item["qty"] * item["price"]
                     total_stock_eval += eval_amt
 
-                # 선택된 삭제 항목 처리
                 if items_to_delete:
                     for itm in items_to_delete:
                         st.session_state.portfolio_items.remove(itm)
                     st.rerun()
 
                 st.markdown("---")
-                safe_cash = st.number_input("고정 안전금고 현금 / 예수금 (원)", min_value=0, value=3000000, step=500000, format="%d", key="tab3_cash_dynamic")
+                account_cash = st.number_input("증권사 계좌 예수금 / 현금 (원)", min_value=0, value=3000000, step=500000, format="%d", key="tab3_cash_dynamic")
 
-                total_account_asset = total_stock_eval + safe_cash
+                # 내 계좌 총자산 = 주식 총 평가금액 + 계좌 예수금
+                total_account_asset = total_stock_eval + account_cash
                 stock_weight = (total_stock_eval / total_account_asset) * 100 if total_account_asset > 0 else 0
-                cash_weight = (safe_cash / total_account_asset) * 100 if total_account_asset > 0 else 0
+                cash_weight = (account_cash / total_account_asset) * 100 if total_account_asset > 0 else 0
 
                 rc1, rc2, rc3 = st.columns(3)
                 rc1.metric("주식 총 평가금액", f"{total_stock_eval:,}원", f"{stock_weight:.1f}%")
-                rc2.metric("보유 현금/예수금", f"{safe_cash:,}원", f"{cash_weight:.1f}%")
+                rc2.metric("계좌 예수금/현금", f"{account_cash:,}원", f"{cash_weight:.1f}%")
                 rc3.metric("내 계좌 총자산", f"{total_account_asset:,}원")
 
                 st.progress(stock_weight / 100.0, text=f"포트폴리오 주식 비중: {stock_weight:.1f}% / 현금 비중: {cash_weight:.1f}%")
 
             st.markdown("---")
+            st.markdown("##### 📝 실시간 모바일 매매일지 (영구 저장)")
+            
             if 'trade_logs' not in st.session_state:
                 st.session_state.trade_logs = []
 
