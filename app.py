@@ -7,7 +7,7 @@ from io import BytesIO
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="간편 교대 매매 분석기",
+    page_title="간편 교대 매매 분석기 Pro",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (안전금고 현금 비중 대시보드 연동)")
+st.subheader("📈 간편 교대 매매 시스템 Pro (7단계 매수 ⇄ 마이너스 회복 익절)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -61,7 +61,7 @@ def get_naver_stock_data(code, count=1250):
     except Exception as e:
         return None
 
-# 상단 입력창 및 자산 커스텀 설정 탭
+# 상단 입력창 및 자산 커스텀 설정
 col_in1, col_in2 = st.columns([2, 1])
 with col_in1:
     user_input = st.text_input(
@@ -113,7 +113,7 @@ def style_table(df_target, df_full):
                 try:
                     v = float(val)
                     vmin, vmax = col_bounds.get(col_name, (0, 1))
-                    ratio = 0.0 if vmax == vmin else max(0.0, min(1.0, (v - vmin) / (vmax - vmax)))
+                    ratio = 0.0 if vmax == vmin else max(0.0, min(1.0, (v - vmin) / (vmax - vmin)))
                     r = int(255 - ratio * 35); g = int(240 - ratio * 160); b = int(240 - ratio * 160)
                     styles[idx] = f'background-color: #{r:02x}{g:02x}{b:02x}; color: {"#FFFFFF" if ratio > 0.5 else "#222222"}; font-weight: {"bold" if ratio > 0.4 else "normal"}; padding: 2px 6px; border-radius: 8px;'
                 except:
@@ -304,18 +304,34 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 💡 [신규 추가] 안전금고 연동형 실시간 현금 비중 & 총자산 대시보드
-        with st.expander("💼 [자산 관리] 안전금고 현금 비중 및 총자산 시뮬레이터", expanded=True):
-            col_as1, col_as2 = st.columns(2)
+        # 💼 [업그레이드] 안전금고 연동형 실시간 현금 비중 & 총자산 대시보드
+        with st.expander("💼 [자산 관리] 안전금고 현금 비중 및 실시간 총자산 대시보드", expanded=True):
+            col_as1, col_as2, col_as3 = st.columns(3)
             with col_as1:
-                user_seed = st.number_input("내 총 시드머니 설정 (원)", min_value=1000000, value=30000000, step=1000000, format="%d")
+                user_seed = st.number_input("내 총 시드머니 (원)", min_value=1000000, value=30000000, step=1000000, format="%d")
             with col_as2:
                 user_safe_cash = st.number_input("고정 안전금고 현금 (원)", min_value=0, value=3000000, step=500000, format="%d")
-            
-            # 자산 배분 계산
+            with col_as3:
+                sync_mode = st.checkbox("매매일지 총 투입금 반영", value=False, help="매매일지에 기록된 투자금 합계를 반영합니다.")
+
+            # 매매일지 연동 로직
+            logged_invest_total = 0
+            if 'trade_logs' in st.session_state and st.session_state.trade_logs:
+                for lg in st.session_state.trade_logs:
+                    if '매수' in lg.get('구분', ''):
+                        try:
+                            clean_amt = int(lg.get('투자금', '0').replace('원', '').replace(',', '').strip())
+                            logged_invest_total += clean_amt
+                        except:
+                            pass
+
             active_pool = max(0, user_seed - user_safe_cash)
-            current_invest_amt = int(active_pool * s['invest_ratio'])
-            current_idle_cash = user_seed - current_invest_amt # 안전금고 + 미투자 현금
+            if sync_mode and logged_invest_total > 0:
+                current_invest_amt = logged_invest_total
+            else:
+                current_invest_amt = int(active_pool * s['invest_ratio'])
+
+            current_idle_cash = user_seed - current_invest_amt
             stock_weight = (current_invest_amt / user_seed) * 100 if user_seed > 0 else 0
             cash_weight = (current_idle_cash / user_seed) * 100 if user_seed > 0 else 0
 
@@ -383,10 +399,10 @@ if stock_code:
                     t_date = st.date_input("거래 일자", datetime.today())
                     t_종목 = st.text_input("종목명", value=f"{stock_name} ({stock_code})")
                 with col_f2:
-                    t_type = st.selectbox("매매 구분", ["레버리지 1~2차 매수 (5%~10%)", "레버리지 3~4차 매수 (15%)", "레버리지 5~6차 매수 (20%)", "레버리지 7차 풀베팅", "마이너스 회복 1~2차 익절", "마이너스 회복 3~5차 익절", "전량 청산 및 현금화"])
-                    t_price = st.number_input("체결 가격 (원)", min_value=0, value=int(s['B1']), step=100)
+                    t_type = st.selectbox("매매 구분", ["레버리지 1~2차 매수 (5%~10%)", "레버리지 3~4차 매수 (15%)", "레버리지 5~6차 매수 (20%)", "레버리지 7차 풀베팅", "마이너스 회복 1~2차 익절", "마이너스 회복 3~5차 익절", "전량 청산 및 현금화", "현금 입금(+)", "현금 출금(-)"])
+                    t_price = st.number_input("체결 가격 / 입출금액 (원)", min_value=0, value=int(s['B1']), step=100)
                 
-                t_amt = st.number_input("투자 금액 (원)", min_value=0, value=3000000, step=100000)
+                t_amt = st.number_input("투자 금액 / 변동 금액 (원)", min_value=0, value=3000000, step=100000)
                 t_memo = st.text_input("메모", placeholder="특이사항이나 매매 사유 입력")
                 
                 submitted = st.form_submit_button("매매일지 저장하기")
@@ -396,7 +412,7 @@ if stock_code:
                         "체결가": f"{t_price:,}원", "투자금": f"{t_amt:,}원", "메모": t_memo
                     }
                     st.session_state.trade_logs.insert(0, new_log)
-                    st.success("매매일지가 세션에 안전하게 저장되었습니다!")
+                    st.success("매매일지가 세션에 안전하게 저장되었습니다! (상단 대시보드 '매매일지 총 투입금 반영' 체크 시 연동됩니다)")
 
             if st.session_state.trade_logs:
                 st.markdown("---")
