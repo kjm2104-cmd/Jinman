@@ -24,7 +24,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 울티마(U-Point) 모바일 자동 계산기")
+st.subheader("📈 모바일 자동 계산기")
 
 # KRX 종목 리스트 캐싱 (종목명/코드 자동 검색용)
 @st.cache_data(ttl=86400)
