@@ -4,6 +4,8 @@ import numpy as np
 import requests
 from datetime import datetime, timedelta
 from io import BytesIO
+import gspread
+from google.oauth2.service_account import Credentials
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
@@ -22,7 +24,24 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (매매일지 종목별 자산 요약 연동)")
+st.subheader("📈 간편 교대 매매 시스템 (구글 스프레드시트 실시간 연동)")
+
+# 🔗 구글 스프레드시트 연결 함수 (Streamlit Secrets 또는 로컬 인증 연동)
+def get_gspread_client():
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    try:
+        # Streamlit Cloud의 secrets에 등록된 경우
+        if "gcp_service_account" in st.secrets:
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+            client = gspread.authorize(creds)
+            return client
+    except Exception as e:
+        pass
+    return None
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -72,7 +91,7 @@ name_to_code = {
     "현대차": "005380"
 }
 
-# 🔍 엔터 입력 및 버튼 클릭이 매끄럽게 작동하는 검색 Form
+# 🔍 검색 Form
 with st.form(key="search_form"):
     col_in1, col_in2, col_in3 = st.columns([2, 1, 1])
     with col_in1:
@@ -204,7 +223,6 @@ def calculate_indicator_sheet(df_raw):
         lm = int(round((p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
         s_val = lm - mm
 
-        # 7단계 매수 / 마이너스 회복 5분할 익절 신호 체계
         if s_val <= -45:
             sig = "🔥 7차 매수 (풀베팅 / 누적 100%)"
             invest_pct = "레버리지 100% (2,700만)"
@@ -334,7 +352,6 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 초기화 및 실시간 총자산 계산 (상단 카드 연동용)
         if 'portfolio_items' not in st.session_state:
             st.session_state.portfolio_items = [
                 {"id": 1, "name": "KODEX 코스닥150레버리지", "qty": 5000, "price": int(s['B1']) if stock_code == "233740" else 10000},
@@ -346,10 +363,10 @@ if stock_code:
             p = int(s['B1']) if (stock_code in item["name"] or stock_name in item["name"]) else item["price"]
             top_total_stock_eval += item["qty"] * p
         
-        top_account_cash = 3000000 # 기본 예수금/현금 가정
+        top_account_cash = 3000000
         top_total_asset = top_total_stock_eval + top_account_cash
 
-        # 핵심 가격 요약 카드 (포트폴리오 비중 대신 '내 계좌 총자산' 배치)
+        # 상단 핵심 요약 카드
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("현재가 (B1)", f"{s['B1']:,}원", f"{s['cur_chg']:+.2f}%")
         c2.metric("S값 지표", f"S: {s['S']}", f"MM:{s['MM']} / LM:{s['LM']}")
@@ -395,9 +412,8 @@ if stock_code:
             st.dataframe(pd.DataFrame(sell_guide_data), use_container_width=True)
 
         with tab3:
-            st.markdown("##### 📝 내 계좌 종목 잔고 현황 및 실시간 총자산")
+            st.markdown("##### 📝 내 계좌 종목 잔고 현황 및 구글 시트 연동 매매일지")
             
-            # 동적 종목 추가/삭제가 가능한 잔고 현황판 및 '내 계좌 총자산' 계산
             with st.expander("💼 내 계좌 총자산 잔고 현황판 (종목 추가·삭제 및 실시간 합계)", expanded=True):
                 st.caption("보유 중인 종목을 자유롭게 추가/삭제하고 수량과 단가를 입력하시면 실시간 주식 평가금액과 '내 계좌 총자산'이 계산됩니다.")
                 
@@ -439,7 +455,6 @@ if stock_code:
                 st.markdown("---")
                 account_cash = st.number_input("증권사 계좌 예수금 / 현금 (원)", min_value=0, value=3000000, step=500000, format="%d", key="tab3_cash_dynamic")
 
-                # 내 계좌 총자산 = 주식 총 평가금액 + 계좌 예수금
                 total_account_asset = total_stock_eval + account_cash
                 stock_weight = (total_stock_eval / total_account_asset) * 100 if total_account_asset > 0 else 0
                 cash_weight = (account_cash / total_account_asset) * 100 if total_account_asset > 0 else 0
@@ -452,11 +467,8 @@ if stock_code:
                 st.progress(stock_weight / 100.0, text=f"포트폴리오 주식 비중: {stock_weight:.1f}% / 현금 비중: {cash_weight:.1f}%")
 
             st.markdown("---")
-            st.markdown("##### 📝 실시간 모바일 매매일지 (영구 저장)")
+            st.markdown("##### 📝 실시간 매매일지 (구글 스프레드시트 자동 저장)")
             
-            if 'trade_logs' not in st.session_state:
-                st.session_state.trade_logs = []
-
             with st.form("trade_log_form"):
                 col_f1, col_f2 = st.columns(2)
                 with col_f1:
@@ -470,36 +482,47 @@ if stock_code:
                 t_amt = st.number_input("투자 금액 / 변동 금액 (원)", min_value=0, value=3000000, step=100000)
                 t_memo = st.text_input("메모", placeholder="특이사항이나 매매 사유 입력")
                 
-                submitted = st.form_submit_button("매매일지 저장하기")
+                submitted = st.form_submit_button("구글 스프레드시트에 매매일지 저장하기")
                 if submitted:
-                    new_log = {
-                        "일자": str(t_date), "종목": t_종목, "구분": t_type,
-                        "수량": t_qty, "체결가": f"{t_price:,}원", "투자금": f"{t_amt:,}원", "메모": t_memo
-                    }
-                    st.session_state.trade_logs.insert(0, new_log)
-                    st.success("매매일지에 수량과 내역이 안전하게 저장되었습니다!")
+                    new_row = [
+                        str(t_date), t_종목, t_type, str(t_qty), 
+                        f"{t_price:,}원", f"{t_amt:,}원", t_memo
+                    ]
+                    
+                    # 구글 시트에 실시간 전송 시도
+                    try:
+                        client = get_gspread_client()
+                        if client:
+                            sheet_url = "https://docs.google.com/spreadsheets/d/14_iZl-8eS3nV7PW2JB7LSODbAE_Llf_DX0Do6ogBxes/edit?gid=0#gid=0"
+                            sheet = client.open_by_url(sheet_url).sheet1
+                            sheet.append_row(new_row)
+                            st.success("🎉 구글 스프레드시트에 매매일지가 실시간으로 안전하게 저장되었습니다!")
+                        else:
+                            st.warning("⚠️ 구글 클라우드 인증(Secrets)이 설정되지 않아 로컬 세션에만 임시 저장됩니다. (Streamlit Cloud Secrets 설정 필요)")
+                    except Exception as e:
+                        st.error(f"구글 시트 저장 중 오류 발생: {e}")
+
+            # 세션 기반 화면 표시용 로직
+            if 'trade_logs' not in st.session_state:
+                st.session_state.trade_logs = []
+
+            if submitted:
+                st.session_state.trade_logs.insert(0, {
+                    "일자": str(t_date), "종목": t_종목, "구분": t_type,
+                    "수량": t_qty, "체결가": f"{t_price:,}원", "투자금": f"{t_amt:,}원", "메모": t_memo
+                })
 
             if st.session_state.trade_logs:
                 st.markdown("---")
-                st.markdown("##### 📋 저장된 매매일지 내역 및 개별 삭제")
-                
+                st.markdown("##### 📋 현재 세션 저장된 매매일지 내역")
                 log_df = pd.DataFrame(st.session_state.trade_logs)
                 st.dataframe(log_df, use_container_width=True)
-
-                col_del1, col_del2 = st.columns([2, 1])
-                with col_del1:
-                    del_idx = st.selectbox("삭제할 내역 번호 선택", options=range(len(st.session_state.trade_logs)), format_func=lambda x: f"[{x}] {st.session_state.trade_logs[x]['일자']} | {st.session_state.trade_logs[x]['종목']} | {st.session_state.trade_logs[x]['구분']} ({st.session_state.trade_logs[x]['수량']}주)")
-                with col_del2:
-                    if st.button("🗑️ 선택한 내역 삭제"):
-                        removed = st.session_state.trade_logs.pop(del_idx)
-                        st.success(f"[{removed['종목']}] 내역이 삭제되었습니다.")
-                        st.rerun()
-
-                if st.button("🗑️ 매매일지 전체 초기화"):
+                
+                if st.button("🗑️ 화면 목록 초기화"):
                     st.session_state.trade_logs = []
                     st.rerun()
             else:
-                st.info("아직 저장된 매매일지가 없습니다.")
+                st.info("아직 이번 세션에 기록된 매매일지 내역이 없습니다. (저장하시면 구글 시트와 함께 실시간으로 쌓입니다)")
 
         with tab4:
             output = BytesIO()
