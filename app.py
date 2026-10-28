@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (매매일지 종목별 자산 요약 연동)")
+st.subheader("📈 간편 교대 매매 시스템 (종목 자산 동적 관리)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -334,7 +334,7 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 핵심 가격 요약 카드 (상단 대시보드 제거 완료)
+        # 핵심 가격 요약 카드
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("현재가 (B1)", f"{s['B1']:,}원", f"{s['cur_chg']:+.2f}%")
         c2.metric("S값 지표", f"S: {s['S']}", f"MM:{s['MM']} / LM:{s['LM']}")
@@ -380,37 +380,61 @@ if stock_code:
             st.dataframe(pd.DataFrame(sell_guide_data), use_container_width=True)
 
         with tab3:
-            st.markdown("##### 📝 실시간 모바일 매매일지 및 내 계좌 종목 잔고 현황판")
+            st.markdown("##### 📝 실시간 모바일 매매일지 및 다종목 잔고 현황판")
             
-            # [기능 추가] 매매일지 탭 내부에 깔끔하게 배치된 종목별 잔고 현황판 (수동 입력 + 실시간 합계)
-            with st.expander("💼 내 계좌 보유 종목 잔고 현황판 (수동 입력 & 실시간 합계)", expanded=True):
-                st.caption("보유 중인 종목과 수량을 직접 적어두시면 현재가와 연동되어 실시간 총자산과 합계가 계산됩니다.")
+            # [동적 종목 추가/삭제가 가능한 잔고 현황판]
+            with st.expander("💼 내 계좌 보유 종목 잔고 현황판 (종목 추가·삭제 및 실시간 합계)", expanded=True):
+                st.caption("필요한 종목을 추가하거나 삭제하고, 보유 수량과 적용 단가를 입력하시면 실시간 총자산과 합계가 계산됩니다.")
                 
-                col_h1, col_h2 = st.columns(2)
-                with col_h1:
-                    lev_qty = st.number_input("KODEX 코스닥150레버리지 보유 수량 (주)", min_value=0, value=5000, step=100)
-                    lev_price_input = st.number_input("레버리지 적용 단가 / 현재가 (원)", min_value=0, value=int(s['B1']) if stock_code == "233740" else 10000, step=100)
-                with col_h2:
-                    sam_qty = st.number_input("삼성전자 보유 수량 (주)", min_value=0, value=4, step=1)
-                    sam_price_input = st.number_input("삼성전자 적용 단가 / 현재가 (원)", min_value=0, value=70000 if stock_code != "005930" else int(s['B1']), step=500)
+                # 세션 상태로 보유 종목 리스트 관리
+                if 'portfolio_items' not in st.session_state:
+                    st.session_state.portfolio_items = [
+                        {"id": 1, "name": "KODEX 코스닥150레버리지", "qty": 5000, "price": int(s['B1']) if stock_code == "233740" else 10000},
+                        {"id": 2, "name": "삼성전자", "qty": 4, "price": 70000 if stock_code != "005930" else int(s['B1'])}
+                    ]
 
-                safe_cash = st.number_input("고정 안전금고 현금 / 예수금 (원)", min_value=0, value=3000000, step=500000, format="%d", key="tab3_cash")
+                # 종목 추가 버튼
+                if st.button("➕ 종목 추가하기"):
+                    new_id = max([item["id"] for item in st.session_state.portfolio_items], default=0) + 1
+                    st.session_state.portfolio_items.append({"id": new_id, "name": f"신규종목{new_id}", "qty": 10, "price": 10000})
+                    st.rerun()
 
-                # 종목별 평가금액 계산
-                lev_eval = lev_qty * (int(s['B1']) if stock_code == "233740" else lev_price_input)
-                sam_eval = sam_qty * (int(s['B1']) if stock_code == "005930" else sam_price_input)
-                total_stock_eval = lev_eval + sam_eval
+                total_stock_eval = 0
+                items_to_delete = []
+
+                for idx, item in enumerate(st.session_state.portfolio_items):
+                    cols = st.columns([2, 1, 1, 0.6])
+                    with cols[0]:
+                        item["name"] = st.text_input(f"종목명 {idx+1}", value=item["name"], key=f"p_name_{item['id']}")
+                    with cols[1]:
+                        item["qty"] = st.number_input(f"수량 (주) {idx+1}", min_value=0, value=item["qty"], step=1, key=f"p_qty_{item['id']}")
+                    with cols[2]:
+                        item["price"] = st.number_input(f"단가/현재가 {idx+1}", min_value=0, value=item["price"], step=100, key=f"p_price_{item['id']}")
+                    with cols[3]:
+                        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                        if st.button("❌ 삭제", key=f"del_p_{item['id']}"):
+                            items_to_delete.append(item)
+
+                    eval_amt = item["qty"] * item["price"]
+                    total_stock_eval += eval_amt
+
+                # 선택된 삭제 항목 처리
+                if items_to_delete:
+                    for itm in items_to_delete:
+                        st.session_state.portfolio_items.remove(itm)
+                    st.rerun()
+
+                st.markdown("---")
+                safe_cash = st.number_input("고정 안전금고 현금 / 예수금 (원)", min_value=0, value=3000000, step=500000, format="%d", key="tab3_cash_dynamic")
+
                 total_account_asset = total_stock_eval + safe_cash
-
                 stock_weight = (total_stock_eval / total_account_asset) * 100 if total_account_asset > 0 else 0
                 cash_weight = (safe_cash / total_account_asset) * 100 if total_account_asset > 0 else 0
 
-                st.markdown("---")
-                rc1, rc2, rc3, rc4 = st.columns(4)
-                rc1.metric("레버리지 평가금", f"{lev_eval:,}원")
-                rc2.metric("삼성전자 평가금", f"{sam_eval:,}원")
-                rc3.metric("주식 총 평가금액", f"{total_stock_eval:,}원", f"{stock_weight:.1f}%")
-                rc4.metric("내 계좌 총자산", f"{total_account_asset:,}원")
+                rc1, rc2, rc3 = st.columns(3)
+                rc1.metric("주식 총 평가금액", f"{total_stock_eval:,}원", f"{stock_weight:.1f}%")
+                rc2.metric("보유 현금/예수금", f"{safe_cash:,}원", f"{cash_weight:.1f}%")
+                rc3.metric("내 계좌 총자산", f"{total_account_asset:,}원")
 
                 st.progress(stock_weight / 100.0, text=f"포트폴리오 주식 비중: {stock_weight:.1f}% / 현금 비중: {cash_weight:.1f}%")
 
