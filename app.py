@@ -4,16 +4,18 @@ import numpy as np
 import FinanceDataReader as fdr
 from datetime import datetime, timedelta
 from io import BytesIO
+from openpyxl.formatting.rule import ColorScaleRule
+from openpyxl.utils import get_column_letter
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="자동 분석기",
+    page_title="울티마(U-Point) 완벽 분석기",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# 모바일 가독성을 높이는 CSS 스타일
+# 모바일 가독성 및 컬러 스타일링 CSS
 st.markdown("""
 <style>
     .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
@@ -22,31 +24,34 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 모바일 자동 계산기")
+st.subheader("📈 울티마(U-Point) 모바일 전용 분석기")
 
-# KRX 종목 리스트 캐싱 (종목명/코드 자동 검색용)
+# KRX 종목 리스트 캐싱
 @st.cache_data(ttl=86400)
-def get_krx_Waitlist():
+def get_krx_list():
     try:
         krx = fdr.StockListing('KRX')[['Code', 'Name']]
         return krx
     except Exception:
         return pd.DataFrame(columns=['Code', 'Name'])
 
-krx_df = get_krx_Waitlist()
+krx_df = get_krx_list()
 
-# 상단 입력창 (종목코드 또는 종목명 입력)
+# 상단 입력창
 col_in1, col_in2 = st.columns([2, 1])
 with col_in1:
     user_input = st.text_input(
         "🔍 종목코드(6자리) 또는 종목명 입력",
-        value="233740",
-        placeholder="예: 005930, 삼성전자"
+        value="137400",
+        placeholder="예: 137400, 피엔티, 에이스테크, 005930"
     ).strip()
 with col_in2:
-    years_back = st.selectbox("조회 기간", options=[3, 4, 5], index=0, format_func=lambda x: f"최근 {x}년")
+    mode_option = st.selectbox(
+        "데이터 모드",
+        options=["📁 원본 파일 기준 (2018~2020년)", "🌐 실시간 최신 데이터 조회"],
+        index=0
+    )
 
-# 입력값을 종목코드와 종목명으로 변환
 stock_code = user_input
 stock_name = user_input
 if not krx_df.empty:
@@ -61,18 +66,68 @@ if not krx_df.empty:
             stock_name = match['Name'].iloc[0]
 
 def r10(val):
-    """엑셀 ROUND(값, -1)과 동일하게 원단위(10원 단위) 반올림"""
     return int(np.floor(val / 10.0 + 0.5) * 10)
 
+def style_table(df_target, df_full):
+    """
+    1. 등락률(C): 양수 붉은색, 음수 파란색
+    2. MM, PM, LM, S, RM: 붉은색 그라데이션 히트맵 (S값 특히 강조)
+    """
+    cols_grad = ['MM', 'PM', 'LM', 'S', 'RM']
+    col_bounds = {}
+    for c in cols_grad:
+        vals = pd.to_numeric(df_full[c], errors='coerce')
+        col_bounds[c] = (vals.min(), vals.max())
+
+    def color_styler(row):
+        styles = [''] * len(row)
+        for idx, col_name in enumerate(row.index):
+            val = row[col_name]
+            
+            # ① 등락률(C열): 오르면 붉은색, 내리면 파란색
+            if col_name == '등락률(C)':
+                if isinstance(val, str) and '%' in val:
+                    try:
+                        num = float(val.replace('%', '').replace('+', ''))
+                        if num > 0:
+                            styles[idx] = 'color: #D32F2F; font-weight: bold;'
+                        elif num < 0:
+                            styles[idx] = 'color: #1976D2; font-weight: bold;'
+                    except:
+                        pass
+
+            # ② MM, PM, LM, S, RM 열: 붉은색 농도 그라데이션 (S값 강조)
+            elif col_name in cols_grad:
+                try:
+                    v = float(val)
+                    vmin, vmax = col_bounds.get(col_name, (0, 1))
+                    ratio = 0.0 if vmax == vmin else (v - vmin) / (vmax - vmin)
+                    ratio = max(0.0, min(1.0, float(ratio)))
+                    
+                    r = int(255 - ratio * (255 - 198))
+                    g = int(245 - ratio * (245 - 28))
+                    b = int(245 - ratio * (245 - 28))
+                    txt_color = '#FFFFFF' if ratio > 0.45 else '#111111'
+                    fw = 'bold' if col_name == 'S' or ratio > 0.4 else 'normal'
+                    styles[idx] = f'background-color: #{r:02x}{g:02x}{b:02x}; color: {txt_color}; font-weight: {fw};'
+                except:
+                    pass
+        return styles
+
+    return df_target.style.apply(color_styler, axis=1).format({
+        '종가(B)': '{:,}',
+        '중심선(D)': '{:,}',
+        '거래량(E)': '{:,}',
+        '거래비율(F)': '{:.2f}'
+    })
+
 def calculate_ultima_sheet(df_raw):
-    """피엔티 예제_20201029.xlsx의 1~9행 및 10행 이하 모든 수식을 계산"""
     df = df_raw.copy().reset_index(drop=True)
     closes = df['Close'].astype(float).values
     vols = df['Volume'].astype(float).values
     dates = pd.to_datetime(df['Date']).values
     n = len(closes)
 
-    # 1. C열(등락률), D열(중심선: α=1/7 지수이동평균), F열(거래비율)
     chg = np.zeros(n)
     chg[1:] = (closes[1:] / closes[:-1]) - 1.0
 
@@ -84,7 +139,6 @@ def calculate_ultima_sheet(df_raw):
     vol_ratio = np.zeros(n)
     vol_ratio[1:] = np.round(vols[1:] / np.where(vols[:-1] == 0, 1, vols[:-1]), 2)
 
-    # 2. 파동 추적 및 L~R열, G~K열(MM, PM, LM, S, RM) 계산
     mm_list, pm_list, lm_list, s_list, rm_list = [], [], [], [], []
     l_col, m_col, n_col, p_col, q_col, r_col = [None]*n, [None]*n, [None]*n, [None]*n, [None]*n, [None]*n
 
@@ -93,16 +147,14 @@ def calculate_ultima_sheet(df_raw):
     trough = int(closes[0])
     first_M = int(closes[0])
     first_Q = int(closes[0])
-    up_phase = 'M'    # 'M'(반등) 또는 'N'(상-추세)
-    down_phase = 'Q'  # 'Q'(조정) 또는 'P'(하-추세)
+    up_phase = 'M'
+    down_phase = 'Q'
 
-    # 직전 완료 파동 기록 레지스터 (엑셀의 M8, N8, P8, Q8 역할)
     M8 = int(closes[0])
     N8 = int(closes[0])
     P8 = int(closes[0])
     Q8 = int(closes[0])
 
-    # 현재 진행 중인 파동 값 (엑셀의 L9:R9 역할)
     L9, M9, N9, P9, Q9, R9 = 0, 0, 0, 0, 0, 0
 
     for i in range(n):
@@ -111,7 +163,6 @@ def calculate_ultima_sheet(df_raw):
         if state == 'UP':
             if p > peak:
                 peak = p
-                # U-Point 상-추세 진입 목표가: L5 = ROUND(first_M * 1.045, -1) 또는 직전 상-추세(N8) 돌파
                 l5_target = r10(first_M * 1.045)
                 n_trigger = min(l5_target, N8) if N8 > 0 else l5_target
                 if up_phase == 'N' or p >= n_trigger:
@@ -127,10 +178,8 @@ def calculate_ultima_sheet(df_raw):
                 else:
                     m_col[i] = '-'
             else:
-                # 고점 대비 -9.5% 전환가(B8) 도달 여부 확인
                 down_turn_price = r10(peak * (1.0 - 0.095))
                 if p <= down_turn_price:
-                    # 상승 파동 완료 -> M8 또는 N8 업데이트
                     if up_phase == 'N':
                         N8 = peak
                     else:
@@ -151,11 +200,9 @@ def calculate_ultima_sheet(df_raw):
                 elif p <= r10(peak * 0.955):
                     r_col[i] = p
                     R9 = p
-
-        else:  # state == 'DOWN'
+        else:
             if p < trough:
                 trough = p
-                # U-Point 하-추세 진입 목표가: R5 = ROUND(first_Q * 0.955, -1) 또는 직전 하-추세(P8) 하향 돌파
                 r5_target = r10(first_Q * (1.0 - 0.045))
                 p_trigger = max(r5_target, P8) if P8 > 0 else r5_target
                 if down_phase == 'P' or p <= p_trigger:
@@ -171,10 +218,8 @@ def calculate_ultima_sheet(df_raw):
                 else:
                     q_col[i] = '-'
             else:
-                # 저점 대비 +9.5% 전환가(C8) 도달 여부 확인
                 up_turn_price = r10(trough * 1.095)
                 if p >= up_turn_price:
-                    # 하락 파동 완료 -> P8 또는 Q8 업데이트
                     if down_phase == 'P':
                         P8 = trough
                     else:
@@ -196,7 +241,6 @@ def calculate_ultima_sheet(df_raw):
                     l_col[i] = p
                     L9 = p
 
-        # G(MM), H(PM), I(LM), J(S), K(RM) 계산
         max_mn = max(M8, N8)
         min_pq = min(P8, Q8)
         mm = int(round((max_mn / min_pq - 1.0) * 100)) if min_pq > 0 else 0
@@ -204,7 +248,6 @@ def calculate_ultima_sheet(df_raw):
         lm = int(round((p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
         s_val = lm - mm
 
-        # 최근 1년(달력 기준 1년) 최고/최저 대비 RM 계산
         d_cur = pd.Timestamp(dates[i])
         d_start = d_cur - pd.DateOffset(years=1)
         w_slice = closes[:i+1][pd.to_datetime(dates[:i+1]) >= d_start]
@@ -213,10 +256,21 @@ def calculate_ultima_sheet(df_raw):
         mm_list.append(mm); pm_list.append(pm); lm_list.append(lm)
         s_list.append(s_val); rm_list.append(rm)
 
+    def fmt_pos(col_data):
+        res = []
+        for v in col_data:
+            if v is None:
+                res.append("")
+            elif isinstance(v, (int, np.integer)):
+                res.append(f"{v:,}")
+            else:
+                res.append(str(v))
+        return res
+
     df_out = pd.DataFrame({
         '일자': pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d'),
         '종가(B)': closes.astype(int),
-        '등락률(C)': [f"{x*100:.2f}%" for x in chg],
+        '등락률(C)': [f"{x*100:+.2f}%" for x in chg],
         '중심선(D)': ema.astype(int),
         '거래량(E)': vols.astype(int),
         '거래비율(F)': vol_ratio,
@@ -225,26 +279,25 @@ def calculate_ultima_sheet(df_raw):
         'LM': lm_list,
         'S': s_list,
         'RM': rm_list,
-        '부-반등(L)': l_col,
-        '반등(M)': m_col,
-        '상-추세(N)': n_col,
-        '하-추세(P)': p_col,
-        '조정(Q)': q_col,
-        '부-조정(R)': r_col
+        '부-반등(L)': fmt_pos(l_col),
+        '반등(M)': fmt_pos(m_col),
+        '상-추세(N)': fmt_pos(n_col),
+        '하-추세(P)': fmt_pos(p_col),
+        '조정(Q)': fmt_pos(q_col),
+        '부-조정(R)': fmt_pos(r_col)
     })
 
-    # 상단 요약표(1~9행) 수식 결과 계산
     B1 = int(closes[-1])
     C1 = int(vols[-1])
-    B7 = int(peak)                      # 상단 기준가 = MAX(L9:N9)
-    C7 = int(trough)                    # 하단 기준가 = MIN(P9:R9)
-    B8 = r10(B7 * (1.0 - 0.095))        # 하향 전환가 (조정 전환가)
-    C8 = r10(C7 * 1.095)                # 상향 전환가 (반등 전환가)
-    B9 = r10(B7 * 0.955)                # 하향 1차가격
-    C9 = r10(C7 * 1.045)                # 상향 1차가격
+    B7 = int(peak)
+    C7 = int(trough)
+    B8 = r10(B7 * (1.0 - 0.095))
+    C8 = r10(C7 * 1.095)
+    B9 = r10(B7 * 0.955)
+    C9 = r10(C7 * 1.045)
 
-    L5 = r10(first_M * 1.045)           # U-Point 부-반등 기준
-    R5 = r10(first_Q * (1.0 - 0.045))   # U-Point 부-조정 기준
+    L5 = r10(first_M * 1.045)
+    R5 = r10(first_Q * (1.0 - 0.045))
     F3 = N8 if N8 < L5 else None
     F4 = P8 if P8 > R5 else None
     M5 = F3
@@ -269,26 +322,39 @@ def calculate_ultima_sheet(df_raw):
     }
     return df_out, summary
 
-# 데이터 호출 및 화면 표시
+# 데이터 로드 처리
 if stock_code:
-    start_dt = (datetime.today() - timedelta(days=365 * years_back)).strftime('%Y-%m-%d')
-    with st.spinner(f"[{stock_name} ({stock_code})] 데이터를 불러와 수식을 계산 중입니다..."):
-        raw_df = fdr.DataReader(stock_code, start_dt)
+    if "원본 파일" in mode_option and stock_code == "137400":
+        try:
+            df_orig = pd.read_excel('피엔티 예제_20201029.xlsx', sheet_name='피엔티', header=None)
+            raw_df = df_orig.iloc[9:695, [0, 1, 4]].copy()
+            raw_df.columns = ['Date', 'Close', 'Volume']
+        except Exception:
+            raw_df = fdr.DataReader(stock_code, '2018-01-02', '2020-10-16').reset_index()
+            raw_df.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Change']
+    else:
+        start_dt = (datetime.today() - timedelta(days=365 * 3)).strftime('%Y-%m-%d')
+        with st.spinner(f"[{stock_name} ({stock_code})] 데이터를 불러오는 중입니다..."):
+            raw_df = fdr.DataReader(stock_code, start_dt)
+            if raw_df is not None:
+                raw_df = raw_df.reset_index()
+                if 'Date' not in raw_df.columns:
+                    raw_df.rename(columns={raw_df.columns[0]: 'Date'}, inplace=True)
+                if 'Close' not in raw_df.columns and '종가' in raw_df.columns:
+                    raw_df.rename(columns={'종가': 'Close', '거래량': 'Volume'}, inplace=True)
 
     if raw_df is not None and not raw_df.empty:
-        raw_df = raw_df.reset_index()
         df_result, s = calculate_ultima_sheet(raw_df)
 
         st.markdown(f"#### 📌 {stock_name} (`{stock_code}`) — 현재 상태: **{s['state']}**")
 
-        # 핵심 가격 요약 카드 (모바일 2열 배치)
+        # 핵심 가격 요약 카드
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("현재가 (B1)", f"{s['B1']:,}원", f"{s['cur_chg']:+.2f}% (거래량 {s['C1']:,})")
         c2.metric("3M (MM / PM / LM)", f"{s['MM']} / {s['PM']} / {s['LM']}", f"S: {s['S']} | RM: {s['RM']}")
         c3.metric("상단 기준가 (B7) / 조정전환가 (B8)", f"{s['B7']:,}원", f"전환가 {s['B8']:,}원 | 1차 {s['B9']:,}원")
         c4.metric("하단 기준가 (C7) / 반등전환가 (C8)", f"{s['C7']:,}원", f"전환가 {s['C8']:,}원 | 1차 {s['C9']:,}원")
 
-        # 탭 구성 (모바일에서 스크롤 최소화)
         tab1, tab2, tab3, tab4 = st.tabs([
             "📊 일별 수식표 (전체)",
             "🎯 추세 전환일만 보기",
@@ -297,15 +363,18 @@ if stock_code:
         ])
 
         with tab1:
-            st.caption("최근 거래일 순으로 정렬되어 있습니다. 좌우로 스크롤하여 L~R열 추세 위치를 확인하세요.")
-            st.dataframe(df_result.iloc[::-1], use_container_width=True, height=520)
+            st.caption("📈 주가 상승일(등락률 붉은색) / 하락일(파란색) 및 MM~RM 열의 붉은색 농도(S값 특히 강조)가 적용되었습니다.")
+            df_rev = df_result.iloc[::-1]
+            styled_all = style_table(df_rev, df_result)
+            st.dataframe(styled_all, use_container_width=True, height=520)
 
         with tab2:
-            # L~R열 중 값이 있는 행만 필터링
             pos_cols = ['부-반등(L)', '반등(M)', '상-추세(N)', '하-추세(P)', '조정(Q)', '부-조정(R)']
-            mask = df_result[pos_cols].notna().any(axis=1)
-            st.caption("부-반등, 반등, 상-추세, 하-추세, 조정, 부-조정 가격이 찍힌 변곡점 일자만 모아봅니다.")
-            st.dataframe(df_result[mask].iloc[::-1], use_container_width=True, height=520)
+            mask = (df_result[pos_cols] != "").any(axis=1)
+            st.caption("변곡점 가격이 기록된 날만 모아봅니다.")
+            df_filtered = df_result[mask].iloc[::-1]
+            styled_filtered = style_table(df_filtered, df_result)
+            st.dataframe(styled_filtered, use_container_width=True, height=520)
 
         with tab3:
             st.markdown("##### 🔹 기준가 · 전환가 · 1차가격 · U-Point (엑셀 A1:R9 영역)")
@@ -327,10 +396,24 @@ if stock_code:
 
         with tab4:
             output = BytesIO()
+            sheet_title = f"{stock_name}_{stock_code}"[:31]
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_result.to_excel(writer, index=False, sheet_name=f"{stock_name}_{stock_code}")
+                df_result.to_excel(writer, index=False, sheet_name=sheet_title)
+                ws = writer.sheets[sheet_title]
+                max_row = len(df_result) + 1
+                for col_name in ['MM', 'PM', 'LM', 'S', 'RM']:
+                    col_idx = df_result.columns.get_loc(col_name) + 1
+                    col_letter = get_column_letter(col_idx)
+                    cell_range = f"{col_letter}2:{col_letter}{max_row}"
+                    rule = ColorScaleRule(
+                        start_type='min', start_color='FFF5F5',
+                        mid_type='percentile', mid_value=50, mid_color='FFCDD2',
+                        end_type='max', end_color='D32F2F'
+                    )
+                    ws.conditional_formatting.add(cell_range, rule)
+
             st.download_button(
-                label=f"📥 {stock_name}({stock_code}) 계산 결과 엑셀(.xlsx) 다운로드",
+                label=f"📥 {stock_name}({stock_code}) 색상 적용 엑셀(.xlsx) 다운로드",
                 data=output.getvalue(),
                 file_name=f"울티마_{stock_name}_{stock_code}_{datetime.today().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
