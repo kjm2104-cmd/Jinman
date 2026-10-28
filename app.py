@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (레버리지 7단계 매수 ⇄ 익절)")
+st.subheader("📈 간편 교대 매매 시스템 (레버리지 7단계 매수 ⇄ 마이너스 회복 익절)")
 
 # KRX 종목 리스트 캐싱
 @st.cache_data(ttl=86400)
@@ -98,7 +98,7 @@ def style_table(df_target, df_full):
                 except:
                     pass
             elif col_name == '매수신호(레버리지/인버스)':
-                if '7차 최종' in str(val) or '7차 풀베팅' in str(val): styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
+                if '7차 최종' in str(val) or '7차 풀베팅' in str(val) or '5차 최종익절' in str(val): styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
                 elif '매수' in str(val): styles[idx] = 'background-color: #D32F2F; color: #FFFFFF; font-weight: bold;'
                 elif '익절' in str(val): styles[idx] = 'background-color: #E3F2FD; color: #0D47A1; font-weight: bold;'
             elif col_name in cols_grad:
@@ -163,7 +163,7 @@ def calculate_indicator_sheet(df_raw):
         lm = int(round((p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
         s_val = lm - mm
 
-        # 7단계 매수 / 5분할 익절 신호 체계
+        # 통합 표 및 신호 체계 (7단계 매수 ⇄ 마이너스 회복 5분할 익절)
         if s_val <= -45:
             sig = "🔥 7차 매수 (풀베팅 / 누적 100%)"
             invest_pct = "레버리지 100% (2,700만)"
@@ -171,32 +171,32 @@ def calculate_indicator_sheet(df_raw):
         elif s_val <= -35:
             sig = "🚨 6차 매수 (누적 85%)"
             invest_pct = "레버리지 85%"
-            cash_pct = "현금 대기"
+            cash_pct = "현금 300만 (안전금고)"
         elif s_val <= -25:
             sig = "⚠️ 5차 매수 (누적 65%)"
             invest_pct = "레버리지 65%"
-            cash_pct = "현금 대기"
+            cash_pct = "현금 300만 (안전금고)"
         elif s_val <= -18:
             sig = "⚠️ 4차 매수 (누적 45%)"
             invest_pct = "레버리지 45%"
-            cash_pct = "현금 대기"
+            cash_pct = "현금 300만 (안전금고)"
         elif s_val <= -12:
             sig = "🔍 3차 매수 (누적 30%)"
             invest_pct = "레버리지 30%"
-            cash_pct = "현금 대기"
+            cash_pct = "현금 300만 (안전금고)"
         elif s_val <= -7:
             sig = "🔍 2차 매수 (누적 15%)"
             invest_pct = "레버리지 15%"
-            cash_pct = "현금 대기"
+            cash_pct = "현금 300만 (안전금고)"
         elif s_val <= -3:
             sig = "🔍 1차 매수 (5%)"
             invest_pct = "레버리지 5%"
-            cash_pct = "현금 대기"
+            cash_pct = "현금 300만 (안전금고)"
         # 마이너스 회복 구간 5분할 익절 (-35 ~ 0)
         elif s_val >= 0:
             sig = "🔥 5차 최종익절 (전량 현금화 완료)"
             invest_pct = "레버리지 0% (현금 100%)"
-            cash_pct = "현금 100%"
+            cash_pct = "현금 300만 포함 총 3,000만+"
         elif s_val >= -5:
             sig = "✨ 4차 익절 (누적 80% 현금화)"
             invest_pct = "레버리지 20% 잔여"
@@ -216,7 +216,7 @@ def calculate_indicator_sheet(df_raw):
         else:
             sig = "중립 대기 구간"
             invest_pct = "기존 비중 유지"
-            cash_pct = "현금 대기"
+            cash_pct = "현금 300만 (안전금고)"
 
         d_cur = pd.Timestamp(dates[i])
         w_slice = closes[:i+1][pd.to_datetime(dates[:i+1]) >= (d_cur - pd.DateOffset(years=1))]
@@ -264,11 +264,11 @@ if stock_code:
         current_s_val = s['S']
         if current_s_val <= -3:
             action_title = "📉 [하락장 매수 모드]"
-            action_desc = f"현재 S값({current_s_val})이 하락 구간입니다. 7단계 비중(5% ➔ 10% ➔ 15% ➔ 15% ➔ 20% ➔ 20% ➔ 15%)에 맞춰 자율적으로 매수하세요."
+            action_desc = f"현재 S값({current_s_val})이 하락 구간입니다. 7단계 매수 플랜에 맞춰 비중별로 매수를 진행하세요."
             badge_color = "#D32F2F"
         elif current_s_val >= -35:
             action_title = "📈 [상승장 익절 모드]"
-            action_desc = f"현재 S값({current_s_val})이 마이너스 회복 구간입니다. S값 회복 단계별로 현금화를 실행하세요."
+            action_desc = f"현재 S값({current_s_val})이 마이너스 회복 구간입니다. S값 회복 5분할 익절 규칙에 따라 현금화를 실행하세요."
             badge_color = "#1976D2"
         else:
             action_title = "⚖️ [중립 관망 모드]"
@@ -295,26 +295,26 @@ if stock_code:
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 실시간 매매 가이드", "📝 매매일지 (영구 저장)", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 S값 기준 [7단계 매수 플랜 (현금 300만 고정)] 및 [마이너스 회복 5분할 익절] 자동 반영")
+            st.caption("📈 S값 기준 [7단계 매수] 및 [마이너스 회복 5분할 익절]이 통합 반영된 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
         with tab2:
             st.markdown("##### 📉 [1단계] 실전 7단계 매수 플랜 (현금 300만 원 고정)")
             buy_guide_data = [
-                {"단계": "1차 매수", "비중": "5%", "회차별 금액": "135만 원", "누적 금액": "135만 원", "설명": "하락 초입 가볍게 입질"},
-                {"단계": "2차 매수", "비중": "10%", "회차별 금액": "270만 원", "누적 금액": "405만 원", "설명": "조정 시 추가 비중 확대"},
-                {"단계": "3차 매수", "비중": "15%", "회차별 금액": "405만 원", "누적 금액": "810만 원", "설명": "하락세 깊어질 때 물량 확보"},
-                {"단계": "4차 매수", "비중": "15%", "회차별 금액": "405만 원", "누적 금액": "1,215만 원", "설명": "중간 지점 비중 안정적 채우기"},
-                {"단계": "5차 매수", "비중": "20%", "회차별 금액": "540만 원", "누적 금액": "1,755만 원", "설명": "깊은 조정 구간 굵직하게 싣기"},
-                {"단계": "6차 매수", "비중": "20%", "회차별 금액": "540만 원", "누적 금액": "2,295만 원", "설명": "공포 확산 바닥권 대규모 담기"},
-                {"단계": "7차 매수 (풀베팅)", "비중": "15%", "회차별 금액": "405만 원", "누적 금액": "2,700만 원", "설명": "[최종 바닥] 분할 매수 한도 소진 (현금 300만은 고정 대기)"},
+                {"단계": "1차 매수", "S값 조건": "S ≤ -3", "투입 비중": "5% (135만)", "누적 금액": "135만", "설명": "하락 초입 가볍게 입질"},
+                {"단계": "2차 매수", "S값 조건": "S ≤ -7", "투입 비중": "10% (270만)", "누적 금액": "405만", "설명": "조정 시 추가 비중 확대"},
+                {"단계": "3차 매수", "S값 조건": "S ≤ -12", "투입 비중": "15% (405만)", "누적 금액": "810만", "설명": "하락세 깊어질 때 물량 확보"},
+                {"단계": "4차 매수", "S값 조건": "S ≤ -18", "투입 비중": "15% (405만)", "누적 금액": "1,215만", "설명": "중간 지점 비중 안정적 채우기"},
+                {"단계": "5차 매수", "S값 조건": "S ≤ -25", "투입 비중": "20% (540만)", "누적 금액": "1,755만", "설명": "깊은 조정 구간 굵직하게 싣기"},
+                {"단계": "6차 매수", "S값 조건": "S ≤ -35", "투입 비중": "20% (540만)", "누적 금액": "2,295만", "설명": "공포 확산 바닥권 대규모 담기"},
+                {"단계": "7차 풀베팅", "S값 조건": "S ≤ -45", "투입 비중": "15% (405만)", "누적 금액": "2,700만", "설명": "[최종 바닥] 분할 매수 한도 소진 (현금 300만 고정)"},
             ]
             st.dataframe(pd.DataFrame(buy_guide_data), use_container_width=True)
 
             st.markdown("---")
             st.markdown("##### 📈 [2단계] 마이너스 회복 구간 5분할 익절 가이드")
-            st.info("마이너스 회복 구간(-35 ~ 0) 진입 시 아래 단계별로 현금화를 실행하세요.")
+            st.info("마이너스 회복 구간(-35 ~ 0) 진입 시 아래 S값 조건에 따라 단계별 현금화를 실행하세요.")
 
             current_s = float(s['S'])
             
@@ -381,3 +381,4 @@ if stock_code:
             )
     else:
         st.error("종목 데이터를 찾을 수 없습니다. 6자리 종목코드나 정확한 종목명을 입력해 주세요.")
+'''
