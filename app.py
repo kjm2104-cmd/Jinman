@@ -7,7 +7,7 @@ from io import BytesIO
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="간편 교대 매매 분석기 Pro+",
+    page_title="간편 교대 매매 분석기 Pro++",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 Pro+ (수량 연동 & 총자산 대시보드)")
+st.subheader("📈 간편 교대 매매 시스템 Pro++ (종목별 자산 분리 & 내역 삭제 기능)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -279,7 +279,6 @@ if stock_code:
     if raw_df is not None and not raw_df.empty:
         df_result, s = calculate_indicator_sheet(raw_df)
 
-        # 🚨 [상단 핵심 행동 가이드 카드]
         current_s_val = s['S']
         if current_s_val <= -3:
             action_title = "📉 [하락장 매수 모드]"
@@ -304,34 +303,36 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 💼 [수량 연동형 자산 관리 대시보드]
-        with st.expander("💼 [자산 관리] 보유 수량 연동 및 실시간 총자산 대시보드", expanded=True):
+        # 💼 [종목별 독립 분리된 자산 관리 대시보드]
+        with st.expander(f"💼 [자산 관리] '{stock_name} ({stock_code})' 보유 수량 및 실시간 총자산 대시보드", expanded=True):
             col_as1, col_as2 = st.columns(2)
             with col_as1:
-                user_safe_cash = st.number_input("고정 안전금고 현금 (원)", min_value=0, value=3000000, step=500000, format="%d")
+                user_safe_cash = st.number_input("고정 안전금고 현금 (원)", min_value=0, value=3000000, step=500000, format="%d", key="safe_cash_input")
             with col_as2:
-                sync_mode = st.checkbox("매매일지 보유 수량 자동 연동", value=True, help="매매일지에 기록된 매수/매도 수량을 합산하여 현재 보유 주식 수량을 계산합니다.")
+                sync_mode = st.checkbox("현재 조회 중인 종목 매매일지 수량만 연동", value=True, help="현재 화면에 입력된 종목코드와 일치하는 매매일지 내역만 합산합니다.")
 
-            # 매매일지 기반 보유 주식 수량 계산
+            # 현재 조회 중인 종목(stock_code 또는 stock_name)과 일치하는 매매일지만 필터링하여 수량 계산
             total_shares = 0
-            logged_invest_total = 0
             if 'trade_logs' in st.session_state and st.session_state.trade_logs:
                 for lg in st.session_state.trade_logs:
                     g = lg.get('구분', '')
+                    item_name = str(lg.get('종목', ''))
+                    
+                    # 현재 종목코드나 종목명이 포함된 내역만 연동
+                    if sync_mode and (stock_code not in item_name and stock_name not in item_name):
+                        continue
+
                     try:
                         qty = int(lg.get('수량', 0))
-                        amt = int(lg.get('투자금', '0').replace('원', '').replace(',', '').strip())
                     except:
                         qty = 0
-                        amt = 0
                     
                     if '매수' in g:
                         total_shares += qty
-                        logged_invest_total += amt
                     elif '익절' in g or '청산' in g:
                         total_shares = max(0, total_shares - qty)
 
-            # 주식 평가금액 = 현재가(B1) * 보유 수량
+            # 주식 평가금액 = 현재가(B1) * 현재 종목 보유 수량
             current_stock_value = s['B1'] * total_shares if sync_mode else int((30000000 - user_safe_cash) * s['invest_ratio'])
             total_net_asset = current_stock_value + user_safe_cash
             stock_weight = (current_stock_value / total_net_asset) * 100 if total_net_asset > 0 else 0
@@ -343,7 +344,7 @@ if stock_code:
             c_w3.metric("안전금고 현금", f"{user_safe_cash:,}원", f"{cash_weight:.1f}%")
             c_w4.metric("총 자산 평가액", f"{total_net_asset:,}원")
 
-            st.progress(stock_weight / 100.0, text=f"총자산 기준 주식 비중: {stock_weight:.1f}% / 현금 비중: {cash_weight:.1f}%")
+            st.progress(stock_weight / 100.0, text=f"({stock_name}) 총자산 기준 주식 비중: {stock_weight:.1f}% / 현금 비중: {cash_weight:.1f}%")
 
         # 핵심 가격 요약 카드
         c1, c2, c3, c4 = st.columns(4)
@@ -416,14 +417,25 @@ if stock_code:
                         "수량": t_qty, "체결가": f"{t_price:,}원", "투자금": f"{t_amt:,}원", "메모": t_memo
                     }
                     st.session_state.trade_logs.insert(0, new_log)
-                    st.success("매매일지에 수량과 내역이 안전하게 저장되었습니다! (상단 대시보드에 실시간 연동됩니다)")
+                    st.success("매매일지에 수량과 내역이 안전하게 저장되었습니다!")
 
             if st.session_state.trade_logs:
                 st.markdown("---")
-                st.markdown("##### 📋 저장된 매매일지 내역")
+                st.markdown("##### 📋 저장된 매매일지 내역 및 개별 삭제")
+                
+                # 삭제할 인덱스 선택 UI
                 log_df = pd.DataFrame(st.session_state.trade_logs)
                 st.dataframe(log_df, use_container_width=True)
-                
+
+                col_del1, col_del2 = st.columns([2, 1])
+                with col_del1:
+                    del_idx = st.selectbox("삭제할 내역 번호 선택", options=range(len(st.session_state.trade_logs)), format_func=lambda x: f"[{x}] {st.session_state.trade_logs[x]['일자']} | {st.session_state.trade_logs[x]['종목']} | {st.session_state.trade_logs[x]['구분']} ({st.session_state.trade_logs[x]['수량']}주)")
+                with col_del2:
+                    if st.button("🗑️ 선택한 내역 삭제"):
+                        removed = st.session_state.trade_logs.pop(del_idx)
+                        st.success(f"[{removed['종목']}] 내역이 삭제되었습니다.")
+                        st.rerun()
+
                 if st.button("🗑️ 매매일지 전체 초기화"):
                     st.session_state.trade_logs = []
                     st.rerun()
