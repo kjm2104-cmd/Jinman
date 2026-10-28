@@ -30,10 +30,18 @@ st.subheader("📈 모바일 분석기")
 @st.cache_data(ttl=86400)
 def get_krx_list():
     try:
-        krx = fdr.StockListing('KRX')[['Code', 'Name']]
+        krx = fdr.StockListing('KRX')
+        if 'Code' in krx.columns and 'Name' in krx.columns:
+            return krx[['Code', 'Name']]
+        elif 'Symbol' in krx.columns and 'Name' in krx.columns:
+            return krx.rename(columns={'Symbol': 'Code'})[['Code', 'Name']]
         return krx
     except Exception:
-        return pd.DataFrame(columns=['Code', 'Name'])
+        fallback_data = {
+            'Code': ['233740', '137400', '088800', '005930', '069500', '229200'],
+            'Name': ['KODEX 코스닥150레버리지', '피엔티', '에이스테크', '삼성전자', 'KODEX 200', 'KODEX 코스닥150선물인버스']
+        }
+        return pd.DataFrame(fallback_data)
 
 krx_df = get_krx_list()
 
@@ -50,13 +58,18 @@ with col_in2:
 
 stock_code = user_input
 stock_name = user_input
+
 if not krx_df.empty:
-    if user_input.isdigit() and len(user_input) == 6:
-        match = krx_df[krx_df['Code'] == user_input]
+    krx_df['Code'] = krx_df['Code'].astype(str).str.zfill(6)
+    
+    if user_input.isdigit() and len(user_input) <= 6:
+        target_code = user_input.zfill(6)
+        match = krx_df[krx_df['Code'] == target_code]
         if not match.empty:
+            stock_code = target_code
             stock_name = match['Name'].iloc[0]
     else:
-        match = krx_df[krx_df['Name'] == user_input]
+        match = krx_df[krx_df['Name'].str.contains(user_input, na=False)]
         if not match.empty:
             stock_code = match['Code'].iloc[0]
             stock_name = match['Name'].iloc[0]
@@ -65,10 +78,6 @@ def r10(val):
     return int(np.floor(val / 10.0 + 0.5) * 10)
 
 def style_table(df_target, df_full):
-    """
-    1. 종가(B), 등락률(C): 전일 대비 상승(붉은색), 하락(파란색), 보합(검은색)
-    2. S값 및 MM, PM, LM, RM: 붉은색 그라데이션 히트맵 (S값 특별 강조)
-    """
     cols_grad = ['MM', 'PM', 'LM', 'RM']
     col_bounds = {}
     for c in cols_grad:
@@ -98,7 +107,7 @@ def style_table(df_target, df_full):
                 else:
                     styles[idx] = 'color: #111111;'
 
-            # ② S값 컬럼 스타일링 (눈에 잘 띄도록 강조)
+            # ② S값 강조 스타일링
             elif col_name == 'S':
                 try:
                     s_num = float(val)
@@ -111,7 +120,7 @@ def style_table(df_target, df_full):
                 except:
                     pass
 
-            # ③ MM, PM, LM, RM 열: 붉은색 농도 그라데이션 히트맵
+            # ③ MM, PM, LM, RM 열: 붉은색 그라데이션 히트맵
             elif col_name in cols_grad:
                 try:
                     v = float(val)
