@@ -34,12 +34,10 @@ def get_gsheet_connection():
         "https://www.googleapis.com/auth/drive"
     ]
     try:
-        # Streamlit secrets에 저장된 서비스 계정 정보 연동
         if "gcp_service_account" in st.secrets:
             creds_dict = dict(st.secrets["gcp_service_account"])
             creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
             client = gspread.authorize(creds)
-            # 사용자가 제공한 구글 스프레드시트 URL
             sheet_url = "https://docs.google.com/spreadsheets/d/14_iZl-8eS3nV7PW2JB7LSODbAE_Llf_DX0Do6ogBxes/edit?gid=0#gid=0"
             sheet = client.open_by_url(sheet_url).sheet1
             return sheet
@@ -356,25 +354,13 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 초기 잔고 현황판 리스트 (기본 종목 없이 빈 상태로 설정)
-        if 'portfolio_items' not in st.session_state:
-            st.session_state.portfolio_items = []
-        
-        top_total_stock_eval = 0
-        for item in st.session_state.portfolio_items:
-            p = int(s['B1']) if (stock_code in item["name"] or stock_name in item["name"]) else item["price"]
-            top_total_stock_eval += item["qty"] * p
-        
-        top_account_cash = 3000000
-        top_total_asset = top_total_stock_eval + top_account_cash
-
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("현재가 (B1)", f"{s['B1']:,}원", f"{s['cur_chg']:+.2f}%")
         c2.metric("S값 지표", f"S: {s['S']}", f"MM:{s['MM']} / LM:{s['LM']}")
-        c3.metric("내 계좌 총자산", f"{top_total_asset:,}원", f"주식 {top_total_stock_eval:,}원")
-        c4.metric("매매 모드", s['state'])
+        c3.metric("기준 지표 상태", s['state'])
+        c4.metric("추천 현금 비중", s['cash_pct'])
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 실시간 매매 가이드", "📝 매매일지 & 내 계좌 총자산", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 실시간 매매 가이드", "📝 매매일지 & 최근 기록 뷰어", "💾 엑셀 다운로드"])
 
         with tab1:
             st.caption("📈 S값 기준 [7단계 매수] 및 [마이너스 회복 5분할 익절]이 통합 반영된 마스터 표입니다.")
@@ -413,64 +399,28 @@ if stock_code:
             st.dataframe(pd.DataFrame(sell_guide_data), use_container_width=True)
 
         with tab3:
-            st.markdown("##### 📝 내 계좌 종목 잔고 현황 및 구글 시트 연동 매매일지")
-            
-            with st.expander("💼 내 계좌 총자산 잔고 현황판 (종목 추가·삭제 및 실시간 합계)", expanded=True):
-                st.caption("보유 중인 종목을 자유롭게 추가/삭제하고 수량과 단가를 입력하시면 실시간 주식 평가금액과 '내 계좌 총자산'이 계산됩니다.")
-                
-                if 'portfolio_items' not in st.session_state:
-                    st.session_state.portfolio_items = []
-
-                if st.button("➕ 보유 종목 추가하기"):
-                    new_id = max([item["id"] for item in st.session_state.portfolio_items], default=0) + 1
-                    st.session_state.portfolio_items.append({"id": new_id, "name": f"신규종목{new_id}", "qty": 10, "price": 10000})
-                    st.rerun()
-
-                total_stock_eval = 0
-                items_to_delete = []
-
-                if not st.session_state.portfolio_items:
-                    st.info("현재 등록된 보유 종목이 없습니다. [➕ 보유 종목 추가하기] 버튼을 눌러 종목을 추가해 주세요.")
-                else:
-                    for idx, item in enumerate(st.session_state.portfolio_items):
-                        cols = st.columns([2, 1, 1, 0.6])
-                        with cols[0]:
-                            item["name"] = st.text_input(f"종목명 {idx+1}", value=item["name"], key=f"p_name_{item['id']}")
-                        with cols[1]:
-                            item["qty"] = st.number_input(f"수량 (주) {idx+1}", min_value=0, value=item["qty"], step=1, key=f"p_qty_{item['id']}")
-                        with cols[2]:
-                            item["price"] = st.number_input(f"단가/현재가 {idx+1}", min_value=0, value=item["price"], step=100, key=f"p_price_{item['id']}")
-                        with cols[3]:
-                            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                            if st.button("❌ 삭제", key=f"del_p_{item['id']}"):
-                                items_to_delete.append(item)
-
-                        eval_amt = item["qty"] * item["price"]
-                        total_stock_eval += eval_amt
-
-                if items_to_delete:
-                    for itm in items_to_delete:
-                        st.session_state.portfolio_items.remove(itm)
-                    st.rerun()
-
-                st.markdown("---")
-                account_cash = st.number_input("증권사 계좌 예수금 / 현금 (원)", min_value=0, value=3000000, step=500000, format="%d", key="tab3_cash_dynamic")
-
-                total_account_asset = total_stock_eval + account_cash
-                stock_weight = (total_stock_eval / total_account_asset) * 100 if total_account_asset > 0 else 0
-                cash_weight = (account_cash / total_account_asset) * 100 if total_account_asset > 0 else 0
-
-                rc1, rc2, rc3 = st.columns(3)
-                rc1.metric("주식 총 평가금액", f"{total_stock_eval:,}원", f"{stock_weight:.1f}%")
-                rc2.metric("계좌 예수금/현금", f"{account_cash:,}원", f"{cash_weight:.1f}%")
-                rc3.metric("내 계좌 총자산", f"{total_account_asset:,}원")
-
-                st.progress(stock_weight / 100.0, text=f"포트폴리오 주식 비중: {stock_weight:.1f}% / 현금 비중: {cash_weight:.1f}%")
-
-            st.markdown("---")
-            st.markdown("##### 📝 구글 스프레드시트 연동 매매일지 저장")
+            st.markdown("##### 📝 구글 스프레드시트 연동 매매일지 저장 및 최근 기록 요약")
             
             sheet = get_gsheet_connection()
+
+            # 구글 시트에 저장된 기존 내역 불러와서 최근 요약 뷰어로 보여주기
+            if sheet is not None:
+                try:
+                    all_rows = sheet.get_all_records()
+                    if all_rows:
+                        st.markdown("📋 **[최근 매매 기록 요약]** (구글 시트 연동 최신순)")
+                        df_logs = pd.DataFrame(all_rows)
+                        # 최근 기록이 위로 오도록 역순 정렬 및 최대 5~10개 표시
+                        st.dataframe(df_logs.iloc[::-1].head(10), use_container_width=True)
+                    else:
+                        st.info("💡 아직 구글 스프레드시트에 기록된 매매일지가 없습니다. 아래 폼에서 첫 기록을 남겨보세요!")
+                except Exception as e:
+                    st.info("구글 시트 연동 데이터를 불러오는 중입니다...")
+            else:
+                st.warning("⚠️ 구글 시트 연결 대기 중 (Secrets 또는 공유 설정을 확인해 주세요)")
+
+            st.markdown("---")
+            st.markdown("##### ✍️ 새로운 매매 내역 기록하기")
 
             with st.form("trade_log_form"):
                 col_f1, col_f2 = st.columns(2)
@@ -491,24 +441,11 @@ if stock_code:
                     if sheet is not None:
                         try:
                             sheet.append_row(row_data)
-                            st.success("✨ 구글 스프레드시트에 매매일지가 실시간으로 안전하게 저장되었습니다!")
+                            st.success("✨ 구글 스프레드시트에 매매일지가 실시간으로 안전하게 저장되었습니다! 화면을 새로고침하면 최신 내역이 요약에 반영됩니다.")
                         except Exception as e:
                             st.error(f"구글 시트 저장 중 오류가 발생했습니다: {e}")
                     else:
                         st.warning("구글 시트 연결 정보를 불러오지 못했습니다. Streamlit Secrets 설정을 확인해 주세요.")
-
-            # 구글 시트에 저장된 기존 내역 불러와서 보여주기
-            if sheet is not None:
-                try:
-                    all_rows = sheet.get_all_records()
-                    if all_rows:
-                        st.markdown("---")
-                        st.markdown("##### 📋 구글 스프레드시트에 저장된 매매일지 목록")
-                        st.dataframe(pd.DataFrame(all_rows), use_container_width=True)
-                    else:
-                        st.info("아직 구글 스프레드시트에 기록된 매매일지가 없습니다.")
-                except Exception as e:
-                    st.info("구글 시트 데이터를 불러오는 중입니다...")
 
         with tab4:
             output = BytesIO()
