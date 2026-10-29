@@ -23,10 +23,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (안정형 네이버 금융 연동)")
-
-# 🔥 [핵심 안전장치] 공유받은 사람이 절대 맹신하지 않도록 앱 최상단에 상시 고정 경고 배너 노출
-st.error("🚨 **[필독] 맹신 금지 및 면책 공지**: 본 시스템은 자동으로 주식을 매수·매도하는 자동매매 프로그램이 아닙니다. 과거 데이터 기반의 '낙폭 및 S값 계산 참고용 도구'일 뿐이며, **모든 매매 판단과 투자 손실의 책임은 전적으로 사용자 본인**에게 있습니다. 횡보장이나 대형주에서는 지표가 왜곡될 수 있으니 주의하세요!")
+st.subheader("📈 간편 교대 매매 시스템 (4단계 핵심 압축 버전)")
 
 # 네이버 금융 일별 시세 크롤링 함수 (개별 종목 및 지수 공용)
 @st.cache_data(ttl=3600)
@@ -69,7 +66,7 @@ def get_naver_stock_data(code, count=1250):
     except Exception as e:
         return None, None
 
-# 주요 종목 빠른 매핑 사전 (코스피: KOSPI, 코스닥: KOSDAQ 지수 코드 포함)
+# 주요 종목 빠른 매핑 사전 (국내 및 해외형 ETF/지수 포함)
 name_to_code = {
     "코스피지수": "KOSPI",
     "코스닥지수": "KOSDAQ",
@@ -79,7 +76,9 @@ name_to_code = {
     "KODEX 200": "069500",
     "SK하이닉스": "000660",
     "LG에너지솔루션": "373220",
-    "현대차": "005380"
+    "현대차": "005380",
+    "애플": "305540", # 국내 상장 해외 테마형 대체 참고용 코드 예시 등 자유롭게 매핑 가능
+    "테슬라": "371460"
 }
 
 code_to_name = {
@@ -106,7 +105,7 @@ def resolve_code_and_name(user_str):
         return code, name
     else:
         for k, v in name_to_code.items():
-            if clean_str in k:
+            if clean_str.lower() in k.lower():
                 return v, k
         return clean_str, clean_str
 
