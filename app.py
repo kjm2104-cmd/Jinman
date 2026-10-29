@@ -23,7 +23,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (새로운 7단계 정밀 타격 버전)")
+st.subheader("📈 간편 교대 매매 시스템 ([매수 추천]·[매도 추천] 표준화)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -187,15 +187,15 @@ def style_table(df_target, df_full):
                 except:
                     pass
 
-            elif col_name == '매수신호(레버리지/인버스)':
+            elif col_name == '매수신호':
                 val_str = str(val)
-                if '매수실행' in val_str:
+                if '매수 추천' in val_str:
                     styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
                 elif val_str == '대기':
                     styles[idx] = 'background-color: #FFF3E0; color: #E65100; font-weight: 900; border: 1px solid #FFB74D; white-space: nowrap;'
                 elif val_str == '추가매수금지':
                     styles[idx] = 'background-color: #ECEFF1; color: #455A64; font-weight: bold; white-space: nowrap;'
-                elif '매도실행' in val_str:
+                elif '매도 추천' in val_str:
                     styles[idx] = 'background-color: #1976D2; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
                 elif val_str == '손실중(버티기)':
                     styles[idx] = 'background-color: #E8F5E9; color: #2E7D32; font-weight: bold; white-space: nowrap;'
@@ -235,10 +235,6 @@ def calculate_indicator_sheet(df_raw):
     up_phase = 'M'; down_phase = 'Q'
     M8, N8, P8, Q8 = peak, peak, peak, peak
 
-    # 🔥 새로운 7단계 매수 비중 배분 (총 100%)
-    # 1차(S≤-25: 3%), 2차(S≤-30: 3%), 3차(S≤-35: 3%)
-    # 4차(S≤-42: 7%), 5차(S≤-49: 7%)
-    # 6차(S≤-52: 30%), 7차(S≤-55: 47% 잔여 전액) = 총 100%
     stage_weights = {1: 0.03, 2: 0.03, 3: 0.03, 4: 0.07, 5: 0.07, 6: 0.30, 7: 0.47}
     
     executed_stages = set()
@@ -284,7 +280,6 @@ def calculate_indicator_sheet(df_raw):
 
         is_trigger_ready = (v_spike or lower_wick_ratio >= 0.3 or cur_chg >= -0.015) and not is_falling_knife
 
-        # 🔥 새로운 7단계 S값 임계점 설정 (-25 ~ -55)
         target_stage = 0
         if s_val <= -55: target_stage = 7
         elif s_val <= -52: target_stage = 6
@@ -298,7 +293,7 @@ def calculate_indicator_sheet(df_raw):
             if cum_invest_ratio > 0 or len(executed_stages) > 0:
                 is_in_profit = (p > avg_buy_price) if avg_buy_price > 0 else True
                 if is_in_profit:
-                    sig = "매도실행(익절)"
+                    sig = "매도 추천"
                     executed_stages.clear()
                     cum_invest_ratio = 0.0
                     avg_buy_price = 0.0
@@ -327,7 +322,11 @@ def calculate_indicator_sheet(df_raw):
                             avg_buy_price = (avg_buy_price * old_ratio + p * added_weight) / cum_invest_ratio
 
                     last_buy_index = i
-                    sig = f"{target_stage}차 매수실행"
+                    # 🔥 7차는 강력매수 추천, 1~6차는 X차 매수 추천으로 표시
+                    if target_stage == 7:
+                        sig = "7차 강력매수 추천"
+                    else:
+                        sig = f"{target_stage}차 매수 추천"
                 else:
                     sig = "대기"
             else:
@@ -336,7 +335,7 @@ def calculate_indicator_sheet(df_raw):
                     is_in_profit = (p > avg_buy_price) if avg_buy_price > 0 else False
 
                     if s_val >= -15 and is_in_profit and cum_invest_ratio > 0:
-                        sig = "매도실행(익절)"
+                        sig = "매도 추천"
                         executed_stages.clear()
                         cum_invest_ratio = 0.0
                         avg_buy_price = 0.0
@@ -362,7 +361,7 @@ def calculate_indicator_sheet(df_raw):
         '일자': pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d'),
         '종가(B)': closes.astype(int),
         '등락률(C)': [f"{x*100:+.2f}%" for x in chg],
-        '매수신호(레버리지/인버스)': buy_signals,
+        '매수신호': buy_signals,
         '중심선(D)': ema.astype(int),
         '거래량(E)': vols.astype(int),
         '거래비율(F)': vol_ratio,
@@ -389,7 +388,7 @@ if stock_code:
         current_s_val = s['S']
         cur_sig = s['current_signal']
         
-        if "매수실행" in cur_sig:
+        if "매수 추천" in cur_sig:
             action_title = f"🔴 [{cur_sig}] ➔ 거래량 유입 및 지지 확인 완료! 오늘 매수를 실행하세요"
             action_desc = "하락 진정세와 함께 거래량이 유입되었습니다. 정해진 비중만큼 과감하게 매수를 진행하세요!"
             badge_color = "#D32F2F"
@@ -401,7 +400,7 @@ if stock_code:
             action_title = f"🛡️ [추가매수금지] ➔ 해당 단계 매수 완료! 뇌동매매 금지"
             action_desc = "이미 현 단계 매수를 마쳤습니다. 다음 조건까지 내려가기 전에는 손가락을 잠그고 관망하세요."
             badge_color = "#455A64"
-        elif "매도실행" in cur_sig:
+        elif cur_sig == "매도 추천":
             action_title = f"🔵 [{cur_sig}] ➔ 평단가 대비 진짜 수익권입니다! 수익을 실현하세요"
             action_desc = "바닥을 탈출해 평단가 위로 올라왔습니다. 원칙에 따라 분할 매도하여 현금을 확보하세요."
             badge_color = "#1976D2"
@@ -432,7 +431,7 @@ if stock_code:
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 새로운 7단계 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 새로운 7단계(-25% ~ -55% 최종 강력매수) 룰과 쿨다운 간격이 적용된 마스터 표입니다.")
+            st.caption("📈 [X차 매수 추천], [매도 추천] 등 직관적인 표준 용어가 적용된 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
@@ -440,14 +439,14 @@ if stock_code:
             st.markdown("##### 🎯 [새로운 7단계 맞춤형 매매 가이드]")
             guide_data = [
                 {"구분": "🟢 관망", "조건": "S ≥ -20 ( ~ -25)", "비중": "0%", "행동 가이드": "안전 구간 ➔ 현금 100% 사수 (매수 없음)"},
-                {"구분": "🟡 1차 매수", "조건": "S ≤ -25 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 초입 ➔ 가벼운 입질 매수실행"},
-                {"구분": "🟡 2차 매수", "조건": "S ≤ -30 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 진행 ➔ 두 번째 입질 매수실행"},
-                {"구분": "🟡 3차 매수", "조건": "S ≤ -35 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 심화 ➔ 세 번째 입질 매수실행"},
-                {"구분": "🟠 4차 매수", "조건": "S ≤ -42 + 거래량/지지 + 쿨다운", "비중": "7%", "행동 가이드": "공포 진입 ➔ 7% 비중 확대 매수실행"},
-                {"구분": "🟠 5차 매수", "조건": "S ≤ -49 + 거래량/지지 + 쿨다운", "비중": "7%", "행동 가이드": "깊은 공포 ➔ 7% 추가 비중 매수실행"},
-                {"구분": "🔴 6차 매수", "조건": "S ≤ -52 + 거래량/지지 + 쿨다운", "비중": "30%", "행동 가이드": "🔥 **[화력 집중]** 30% 대규모 물량 매수실행"},
-                {"구분": "🔴 7차 강력매수", "조건": "S ≤ -55 + 거래량/지지 + 쿨다운", "비중": "47% (잔여 전액)", "행동 가이드": "🚨 **[최후 승부수]** 남은 현금 올인 강력매수실행"},
-                {"구분": "🔵 매도실행(익절)", "조건": "S값 회복 + **현재가 > 평단가**", "비중": "현금화", "행동 가이드": "진짜 수익권일 때만 깔끔하게 분할 매도"},
+                {"구분": "🟡 1차 매수 추천", "조건": "S ≤ -25 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 초입 ➔ 가벼운 입질 매수"},
+                {"구분": "🟡 2차 매수 추천", "조건": "S ≤ -30 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 진행 ➔ 두 번째 입질 매수"},
+                {"구분": "🟡 3차 매수 추천", "조건": "S ≤ -35 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 심화 ➔ 세 번째 입질 매수"},
+                {"구분": "🟠 4차 매수 추천", "조건": "S ≤ -42 + 거래량/지지 + 쿨다운", "비중": "7%", "행동 가이드": "공포 진입 ➔ 7% 비중 확대 매수"},
+                {"구분": "🟠 5차 매수 추천", "조건": "S ≤ -49 + 거래량/지지 + 쿨다운", "비중": "7%", "행동 가이드": "깊은 공포 ➔ 7% 추가 비중 매수"},
+                {"구분": "🔴 6차 매수 추천", "조건": "S ≤ -52 + 거래량/지지 + 쿨다운", "비중": "30%", "행동 가이드": "🔥 **[화력 집중]** 30% 대규모 물량 매수"},
+                {"구분": "🔴 7차 강력매수 추천", "조건": "S ≤ -55 + 거래량/지지 + 쿨다운", "비중": "47% (잔여 전액)", "행동 가이드": "🚨 **[최후 승부수]** 남은 현금 올인 강력매수"},
+                {"구분": "🔵 매도 추천", "조건": "S값 회복 + **현재가 > 평단가**", "비중": "현금화", "행동 가이드": "진짜 수익권일 때만 깔끔하게 분할 매도"},
                 {"구분": "🛡️ 손실중(버티기)", "조건": "S값 회복 + **현재가 ≤ 평단가**", "비중": "홀딩 유지", "행동 가이드": "아직 마이너스이므로 익절하지 않고 버팀"},
                 {"구분": "🔒 추가매수금지", "조건": "매수 완료 후 다음 조건 미달성", "비중": "잠금", "행동 가이드": "추가 매수를 막고 뇌동매매 방지"},
             ]
