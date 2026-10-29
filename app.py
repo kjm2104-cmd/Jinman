@@ -25,7 +25,7 @@ st.markdown("""
 
 st.subheader("📈 간편 교대 매매 시스템 (구글 스프레드시트 실시간 연동)")
 
-# 🔗 구글 스프레드시트 연동 함수 (에러 상세 추적 버전)
+# 🔗 구글 스프레드시트 연동 함수 (개인키 자동 보정 기능 포함)
 @st.cache_resource
 def get_gsheet_connection():
     scope = [
@@ -35,6 +35,11 @@ def get_gsheet_connection():
     try:
         if "gcp_service_account" in st.secrets:
             creds_dict = dict(st.secrets["gcp_service_account"])
+            
+            # 🔥 핵심: Secrets에 들어온 개인키의 문자열 \n을 실제 줄바꿈으로 자동 변환
+            if "private_key" in creds_dict:
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+                
             creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
             client = gspread.authorize(creds)
             sheet_url = "https://docs.google.com/spreadsheets/d/14_iZl-8eS3nV7PW2JB7LSODbAE_Llf_DX0Do6ogBxes/edit?gid=0#gid=0"
