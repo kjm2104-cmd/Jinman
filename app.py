@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (유연한 격발 & 동적 거래량 시각화)")
+st.subheader("📈 간편 교대 매매 시스템 (지표별 동적 농도 시각화 적용)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -120,7 +120,8 @@ def r10(val):
     return int(np.floor(val / 10.0 + 0.5) * 10)
 
 def style_table(df_target, df_full):
-    cols_grad = ['MM', 'PM', 'LM', 'RM']
+    # 컬럼별 최대/최소값 사전 계산 (동적 채도 계산용)
+    cols_grad = ['MM', 'PM', 'LM', 'RM', 'S']
     col_bounds = {}
     for c in cols_grad:
         if c in df_full.columns:
@@ -137,7 +138,7 @@ def style_table(df_target, df_full):
             if col_name in ['종가(B)', '등락률(C)'] and prev_close is not None:
                 styles[idx] = 'color: #D32F2F; font-weight: bold;' if curr_close > prev_close else ('color: #1976D2; font-weight: bold;' if curr_close < prev_close else 'color: #111111;')
             
-            # 🔥 거래량(E) 전일 대비 증감에 따른 붉은색/파란색 동적 진하기 시각화
+            # 🔥 1. 거래량(E) 전일 대비 증감 동적 진하기 시각화
             elif col_name == '거래량(E)':
                 try:
                     curr_vol = float(val)
@@ -145,28 +146,52 @@ def style_table(df_target, df_full):
                     vol_diff_ratio = (curr_vol - prev_vol) / prev_vol if prev_vol > 0 else 0.0
                     
                     if vol_diff_ratio >= 0:
-                        # 증가 ➔ 붉은색 계열 (비율이 클수록 진하게)
                         ratio = min(1.0, vol_diff_ratio / 1.0)
-                        r = 255
-                        g = int(240 - ratio * 180)
-                        b = int(240 - ratio * 180)
+                        r = 255; g = int(240 - ratio * 180); b = int(240 - ratio * 180)
                         styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.3 else "#222222"}; font-weight: bold;'
                     else:
-                        # 감소 ➔ 파란색 계열 (감소 폭이 클수록 진하게)
                         ratio = min(1.0, abs(vol_diff_ratio) / 0.5)
-                        r = int(240 - ratio * 180)
-                        g = int(240 - ratio * 180)
-                        b = 255
+                        r = int(240 - ratio * 180); g = int(240 - ratio * 180); b = 255
                         styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#0D47A1" if ratio > 0.3 else "#222222"}; font-weight: bold;'
                 except:
                     pass
 
+            # 🔥 2. S값 동적 진하기 시각화 (양수면 붉은색 농도, 음수면 푸른색 농도)
             elif col_name == 'S':
                 try:
                     s_num = float(val)
-                    styles[idx] = 'background-color: #FFCDD2; color: #B71C1C; font-weight: 900; padding: 2px 6px; border-radius: 12px; display: inline-block;' if s_num > 0 else ('background-color: #BBDEFB; color: #0D47A1; font-weight: 900; padding: 2px 6px; border-radius: 12px; display: inline-block;' if s_num < 0 else 'background-color: #E0E0E0; color: #333333; font-weight: bold;')
+                    if s_num > 0:
+                        ratio = min(1.0, s_num / 50.0)
+                        r = 255; g = int(230 - ratio * 150); b = int(230 - ratio * 150)
+                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: #B71C1C; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
+                    elif s_num < 0:
+                        ratio = min(1.0, abs(s_num) / 60.0)
+                        r = int(230 - ratio * 150); g = int(230 - ratio * 150); b = 255
+                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
+                    else:
+                        styles[idx] = 'background-color: #E0E0E0; color: #333333; font-weight: bold;'
                 except:
                     pass
+
+            # 🔥 3. MM, PM, LM, RM 지표 컬럼 동적 진하기 시각화
+            elif col_name in ['MM', 'PM', 'LM', 'RM']:
+                try:
+                    v = float(val)
+                    vmin, vmax = col_bounds.get(col_name, (0, 1))
+                    ratio = 0.0 if vmax == vmin else max(0.0, min(1.0, (v - vmin) / (vmax - vmin)))
+                    
+                    if col_name == 'PM' and v < 0:
+                        # 하락률(PM) 음수는 푸른색 농도로 깊게 표시
+                        ratio_neg = min(1.0, abs(v) / 50.0)
+                        r = int(240 - ratio_neg * 150); g = int(240 - ratio_neg * 150); b = 255
+                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: bold; padding: 2px 6px; border-radius: 6px;'
+                    else:
+                        # 일반 수치 그라데이션 (값이 클수록 진한 붉은/오렌지 톤)
+                        r = 255; g = int(245 - ratio * 170); b = int(245 - ratio * 170)
+                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.5 else "#222222"}; font-weight: {"bold" if ratio > 0.4 else "normal"}; padding: 2px 6px; border-radius: 6px;'
+                except:
+                    pass
+
             elif col_name == '매수신호(레버리지/인버스)':
                 val_str = str(val)
                 if '격발!' in val_str:
@@ -179,15 +204,6 @@ def style_table(df_target, df_full):
                     styles[idx] = 'background-color: #FF8F00; color: #FFFFFF; font-weight: bold;'
                 elif '익절' in val_str or '현금화' in val_str:
                     styles[idx] = 'background-color: #1976D2; color: #FFFFFF; font-weight: bold;'
-            elif col_name in cols_grad:
-                try:
-                    v = float(val)
-                    vmin, vmax = col_bounds.get(col_name, (0, 1))
-                    ratio = 0.0 if vmax == vmin else max(0.0, min(1.0, (v - vmin) / (vmax - vmin)))
-                    r = int(255 - ratio * 35); g = int(240 - ratio * 160); b = int(240 - ratio * 160)
-                    styles[idx] = f'background-color: #{r:02x}{g:02x}{b:02x}; color: {"#FFFFFF" if ratio > 0.5 else "#222222"}; font-weight: {"bold" if ratio > 0.4 else "normal"}; padding: 2px 6px; border-radius: 8px;'
-                except:
-                    pass
         return styles
 
     return df_target.style.apply(lambda row: color_styler(row.name, row), axis=1).format({'종가(B)': '{:,}', '중심선(D)': '{:,}', '거래량(E)': '{:,}', '거래비율(F)': '{:.2f}'}, na_rep="-")
@@ -227,7 +243,6 @@ def calculate_indicator_sheet(df_raw):
     armed_stage = 0
     cum_invest_ratio = 0.0
 
-    # 6차(3%), 7차(3%), 8차(15%), 9차(34%), 10차(45%) = 총 100%
     stage_weights = {6: 0.03, 7: 0.03, 8: 0.15, 9: 0.34, 10: 0.45}
 
     for i in range(n):
@@ -262,18 +277,13 @@ def calculate_indicator_sheet(df_raw):
         lm = int(round((p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
         s_val = lm - mm
 
-        # ------------------------------------------------------------------
-        # 🛡️ [유연화된 격발 엔진] (쌍바닥 조건 제거 ➔ 거래량 증가 + 하락 진정/반등)
-        # ------------------------------------------------------------------
         candle_range = high_p - low_p
         lower_wick_ratio = (min(p, open_p) - low_p) / candle_range if candle_range > 0 else 0.0
         is_falling_knife = (cur_chg <= -0.025) and (p < ema[i])
 
-        # 8차 이상(고비중 구간) 격발 조건: [거래량 증가(v_spike) 또는 밑꼬리 지지] + [심한 칼날 하락 아님]
         is_heavy_trigger = (
             (v_spike or lower_wick_ratio >= 0.3 or cur_chg >= -0.015) and not is_falling_knife
         )
-        
         is_light_trigger = (cur_chg >= -0.03) and not is_falling_knife
 
         if s_val >= 0:
@@ -300,7 +310,6 @@ def calculate_indicator_sheet(df_raw):
             if target_buy_stage >= 8 and target_buy_stage not in executed_buy_stages:
                 armed_stage = max(armed_stage, target_buy_stage)
 
-            # [A] 8차 / 9차 / 10차 고비중 구간 (유연화된 격발 조건 검사)
             if armed_stage in [8, 9, 10] and armed_stage not in executed_buy_stages:
                 if target_buy_stage > armed_stage:
                     armed_stage = target_buy_stage
@@ -318,7 +327,6 @@ def calculate_indicator_sheet(df_raw):
                 else:
                     sig = f"🟠 [{armed_stage}차 장전/대기] 거래량 & 반등 대기 중"
 
-            # [B] 6~7차 입질 구간 (각 3%)
             elif target_buy_stage in [6, 7] and target_buy_stage not in executed_buy_stages:
                 if not is_light_trigger:
                     sig = f"🟠 [{target_buy_stage}차 장전/대기] 급락 중 ➔ 대기"
@@ -331,7 +339,6 @@ def calculate_indicator_sheet(df_raw):
                     sig = f"🟡 [{target_buy_stage}차 입질 실행] 3% 매수 (누적 {cum_int}%)"
                     executed_sell_stages.clear()
 
-            # [C] 이미 매수 완료(잠금) 또는 익절 구간
             else:
                 if len(executed_buy_stages) > 0:
                     max_done = max(executed_buy_stages)
@@ -435,21 +442,19 @@ if stock_code:
         c3.metric("현재 누적 투입 비중", s['invest_pct'])
         c4.metric("보호 중인 현금 비중", s['cash_pct'])
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 저격 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 지표 시각화 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 전일 대비 거래량 증감에 따른 동적 컬러링(증가=붉은색 진하기, 감소=파란색 진하기)이 적용된 마스터 표입니다.")
+            st.caption("📈 거래량 및 MM, PM, LM, S, RM 모든 주요 지표에 동적 농도(컬러 그라데이션)가 적용된 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
         with tab2:
-            st.markdown("##### 🎯 [공격형] 동적 거래량 필터 & 10단계 매수 플랜")
+            st.markdown("##### 🎨 표 가독성 및 컬러 시각화 규칙 안내")
             guide_data = [
-                {"단계": "1~5차", "S값 조건": "S ≥ -20", "투입 비중": "0% (관망)", "전략": "얕은 조정 무시 ➔ 현금 100% 사수"},
-                {"단계": "6~7차", "S값 조건": "S ≤ -25 ~ -30", "투입 비중": "각 3%", "전략": "하락 초입 ➔ 가벼운 입질 (1회 잠금)"},
-                {"단계": "8차", "S값 조건": "S ≤ -35", "투입 비중": "15%", "전략": "🔥 **[화력 증폭]** 거래량 유입 또는 하락 진정 시 격발"},
-                {"단계": "9차", "S값 조건": "S ≤ -45", "투입 비중": "34%", "전략": "🚨 **[본격 승부수]** 패닉셀 구간 거래량 터질 때 굵직하게 투하"},
-                {"단계": "10차", "S값 조건": "S ≤ -60", "투입 비중": "45%", "전략": "🔴 **[최후 방어]** 극단적 바닥 -60 구간 잔여 현금 올인"},
+                {"항목": "거래량 (E)", "시각화 방식": "전일 대비 증가 = 붉은색 농도 / 감소 = 파란색 농도 (변동폭이 클수록 진함)"},
+                {"항목": "S값 (S)", "시각화 방식": "양수(+) = 붉은색 진하기 / 음수(-) = 푸른색 진하기 (절대값이 클수록 짙음)"},
+                {"항목": "PM / LM / MM / RM", "시각화 방식": "수치 크기에 따른 동적 채도 적용 (하락폭 PM이 마이너스일 때 푸른색 농도 강조)"},
             ]
             st.dataframe(pd.DataFrame(guide_data), use_container_width=True)
 
