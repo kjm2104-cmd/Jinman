@@ -23,16 +23,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (네이버 금융 단일 통합 버전)")
+st.subheader("📈 간편 교대 매매 시스템 (스마트 브리핑 탑재)")
 
-# 네이버 금융 일별 시세 크롤링 함수 (국내 및 해외/지수 공용)
+# 네이버 금융 일별 시세 크롤링 함수 (개별 종목 및 지수 공용)
 @st.cache_data(ttl=3600)
 def get_naver_stock_data(code, count=1250):
-    clean_code = str(code).strip()
-    if not clean_code:
-        clean_code = "233740"
-        
-    url = f"https://fchart.stock.naver.com/sise.nhn?symbol={clean_code}&timeframe=day&count={count}&requestType=0"
+    url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count={count}&requestType=0"
     try:
         response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
         if response.status_code != 200:
@@ -62,11 +58,11 @@ def get_naver_stock_data(code, count=1250):
         df = pd.DataFrame(data)
         df['Date'] = pd.to_datetime(df['Date'])
         df.set_index('Date', inplace=True)
-        return df, clean_code
+        return df, code
     except Exception as e:
         return None, None
 
-# 주요 종목 및 해외 티커 매핑 사전
+# 주요 종목 빠른 매핑 사전 (코스피: KOSPI, 코스닥: KOSDAQ 지수 코드 포함)
 name_to_code = {
     "코스피지수": "KOSPI",
     "코스닥지수": "KOSDAQ",
@@ -76,13 +72,11 @@ name_to_code = {
     "KODEX 200": "069500",
     "SK하이닉스": "000660",
     "LG에너지솔루션": "373220",
-    "현대차": "005380",
-    "애플": "305540",   # 네이버 연동용 국내 상장 해외 관련 종목코드 또는 티커 대응
-    "테슬라": "371460"
+    "현대차": "005380"
 }
 
 code_to_name = {
-    "KOSPI": "코с피지수",
+    "KOSPI": "코스피지수",
     "KOSDAQ": "코스닥지수",
     "005930": "삼성전자",
     "233740": "KODEX 코스닥150레버리지",
@@ -105,16 +99,16 @@ def resolve_code_and_name(user_str):
         return code, name
     else:
         for k, v in name_to_code.items():
-            if clean_str.lower() in k.lower():
+            if clean_str in k:
                 return v, k
-        return clean_str, clean_str
+        return "233740", clean_str
 
 # 🔍 상단 메인 검색 Form
 with st.form(key="search_form"):
     col_in1, col_in2, col_in3 = st.columns([2, 1, 1])
     with col_in1:
         user_input = st.text_input(
-            "🔍 조회할 종목명 또는 종목코드 입력",
+            "🔍 조회할 메인 종목 또는 종목코드 입력",
             value="233740",
             placeholder="예: 삼성전자 또는 233740"
         ).strip()
@@ -129,7 +123,6 @@ stock_code, stock_name = resolve_code_and_name(user_input)
 def r10(val):
     return int(np.floor(val / 10.0 + 0.5) * 10)
 
-# 🔥 지표별 동적 컬러 그라데이션 및 신호 스타일링 함수
 def style_table(df_target, df_full):
     cols_grad = ['MM', 'PM', 'LM', 'RM', 'S']
     col_bounds = {}
@@ -404,7 +397,7 @@ if stock_code:
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 4단계 가이드 & 자동금액", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 4단계 핵심 압축 시스템과 컬러 시각화가 적용된 마스터 표입니다.")
+            st.caption("📈 4단계 핵심 압축 시스템이 적용된 실전 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
@@ -493,5 +486,3 @@ if stock_code:
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_result.to_excel(writer, index=False, sheet_name="Trading_System")
             st.download_button(label="📥 매매전략 엑셀 다운로드", data=output.getvalue(), file_name=f"전략_{stock_code}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    else:
-        st.error("입력하신 종목의 데이터를 찾을 수 없습니다. 올바른 종목명 또는 종목코드를 입력해 주세요.")
