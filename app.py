@@ -19,12 +19,11 @@ st.markdown("""
     .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
     div[data-testid="stMetricValue"] { font-size: 1.25rem; font-weight: 700; }
     div[data-testid="stMetricLabel"] { font-size: 0.85rem; }
-    /* 데이터프레임 셀 패딩 및 폰트 크기 최적화로 숫자 잘림 방지 */
     table dataframe, th, td { font-size: 0.85rem !important; padding: 4px 6px !important; }
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (거래량 가독성 최적화 버전)")
+st.subheader("📈 간편 교대 매매 시스템 (5단계 매수·매도 표준화)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -192,16 +191,16 @@ def style_table(df_target, df_full):
                 val_str = str(val)
                 if '매수실행' in val_str:
                     styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
-                elif '대기' in val_str:
+                elif val_str == '대기':
                     styles[idx] = 'background-color: #FFF3E0; color: #E65100; font-weight: 900; border: 1px solid #FFB74D;'
-                elif '매수완료(잠금)' in val_str:
+                elif '보유(잠금)' in val_str:
                     styles[idx] = 'background-color: #ECEFF1; color: #455A64; font-weight: bold;'
-                elif '입질매수' in val_str:
-                    styles[idx] = 'background-color: #FF8F00; color: #FFFFFF; font-weight: bold;'
                 elif '매도실행' in val_str:
                     styles[idx] = 'background-color: #1976D2; color: #FFFFFF; font-weight: 900;'
-                elif '보유중(손실홀딩)' in val_str:
+                elif '보유(홀딩)' in val_str:
                     styles[idx] = 'background-color: #E8F5E9; color: #2E7D32; font-weight: bold;'
+                elif val_str == '관망':
+                    styles[idx] = 'color: #2E7D32; font-weight: bold;'
         return styles
 
     return df_target.style.apply(lambda row: color_styler(row.name, row), axis=1).format({'종가(B)': '{:,}', '중심선(D)': '{:,}', '거래량(E)': '{:,}', '거래비율(F)': '{:.2f}'}, na_rep="-")
@@ -236,13 +235,13 @@ def calculate_indicator_sheet(df_raw):
     up_phase = 'M'; down_phase = 'Q'
     M8, N8, P8, Q8 = peak, peak, peak, peak
 
-    executed_buy_stages = set()
-    executed_sell_stages = set()
-    armed_stage = 0
+    # 🔥 5단계 매수 비중 배분 (총 100%)
+    # 1단계(S≤-25: 10%), 2단계(S≤-35: 15%), 3단계(S≤-45: 35%), 4단계(S≤-60: 40%)
+    stage_weights = {1: 0.10, 2: 0.15, 3: 0.35, 4: 0.40}
+    
+    executed_stages = set()
     cum_invest_ratio = 0.0
     avg_buy_price = 0.0
-
-    stage_weights = {6: 0.03, 7: 0.03, 8: 0.15, 9: 0.34, 10: 0.45}
 
     for i in range(n):
         p = int(round(closes[i]))
@@ -280,75 +279,35 @@ def calculate_indicator_sheet(df_raw):
         lower_wick_ratio = (min(p, open_p) - low_p) / candle_range if candle_range > 0 else 0.0
         is_falling_knife = (cur_chg <= -0.025) and (p < ema[i])
 
-        is_heavy_trigger = (
-            (v_spike or lower_wick_ratio >= 0.3 or cur_chg >= -0.015) and not is_falling_knife
-        )
-        is_light_trigger = (cur_chg >= -0.03) and not is_falling_knife
+        # 매수 격발 조건 (거래량 유입 또는 하락 진정)
+        is_trigger_ready = (v_spike or lower_wick_ratio >= 0.3 or cur_chg >= -0.015) and not is_falling_knife
+
+        # 현재 S값에 따른 목표 매수 단계 결정 (1~4단계)
+        target_stage = 0
+        if s_val <= -60: target_stage = 4
+        elif s_val <= -45: target_stage = 3
+        elif s_val <= -35: target_stage = 2
+        elif s_val <= -25: target_stage = 1
 
         if s_val >= 0:
-            if cum_invest_ratio > 0 or len(executed_buy_stages) > 0:
+            if cum_invest_ratio > 0 or len(executed_stages) > 0:
                 is_in_profit = (p > avg_buy_price) if avg_buy_price > 0 else True
                 if is_in_profit:
-                    sig = "🔵 [매도실행(전량익절)] 평단 대비 수익권 완료"
-                    executed_buy_stages.clear()
-                    armed_stage = 0
+                    sig = "매도실행(익절)"
+                    executed_stages.clear()
                     cum_invest_ratio = 0.0
                     avg_buy_price = 0.0
                 else:
-                    sig = f"🛡️ [보유중(손실홀딩)] S값 회복(≥0)했으나 평단({int(avg_buy_price):,}원) 미달"
+                    sig = "보유(홀딩)"
             else:
-                sig = "🟢 [관망] 현금 100% 보유"
+                sig = "관망"
         else:
-            target_buy_stage = 0
-            if s_val <= -60 and pm <= -35:
-                target_buy_stage = 10
-            elif s_val <= -45 and pm <= -25:
-                target_buy_stage = 9
-            elif s_val <= -35:
-                target_buy_stage = 8
-            elif s_val <= -30:
-                target_buy_stage = 7
-            elif s_val <= -25:
-                target_buy_stage = 6
-
-            if target_buy_stage >= 8 and target_buy_stage not in executed_buy_stages:
-                armed_stage = max(armed_stage, target_buy_stage)
-
-            if armed_stage in [8, 9, 10] and armed_stage not in executed_buy_stages:
-                if target_buy_stage > armed_stage:
-                    armed_stage = target_buy_stage
-                
-                if is_heavy_trigger:
+            if target_stage > 0 and target_stage not in executed_stages:
+                if is_trigger_ready:
                     added_weight = 0.0
-                    for stg in range(6, armed_stage + 1):
-                        if stg not in executed_buy_stages:
-                            executed_buy_stages.add(stg)
-                            added_weight += stage_weights[stg]
-                    
-                    if added_weight > 0:
-                        if cum_invest_ratio == 0:
-                            avg_buy_price = p
-                        else:
-                            old_ratio = cum_invest_ratio
-                            cum_invest_ratio = min(1.0, cum_invest_ratio + added_weight)
-                            avg_buy_price = (avg_buy_price * old_ratio + p * added_weight) / cum_invest_ratio
-
-                    pct_int = int(round(stage_weights[armed_stage] * 100))
-                    cum_int = int(round(cum_invest_ratio * 100))
-                    sig = f"🔴 [{armed_stage}차 매수실행] 평단:{int(avg_buy_price):,}원 (누적 {cum_int}%)"
-                    armed_stage = 0
-                    executed_sell_stages.clear()
-                else:
-                    sig = f"🟠 [{armed_stage}차 대기] 거래량 및 반등 대기"
-
-            elif target_buy_stage in [6, 7] and target_buy_stage not in executed_buy_stages:
-                if not is_light_trigger:
-                    sig = f"🟠 [{target_buy_stage}차 대기] 급락 진정 대기"
-                else:
-                    added_weight = 0.0
-                    for stg in range(6, target_buy_stage + 1):
-                        if stg not in executed_buy_stages:
-                            executed_buy_stages.add(stg)
+                    for stg in range(1, target_stage + 1):
+                        if stg not in executed_stages:
+                            executed_stages.add(stg)
                             added_weight += stage_weights[stg]
                     
                     if added_weight > 0:
@@ -360,34 +319,26 @@ def calculate_indicator_sheet(df_raw):
                             avg_buy_price = (avg_buy_price * old_ratio + p * added_weight) / cum_invest_ratio
 
                     cum_int = int(round(cum_invest_ratio * 100))
-                    sig = f"🟡 [{target_buy_stage}차 입질매수] 평단:{int(avg_buy_price):,}원 (누적 {cum_int}%)"
-                    executed_sell_stages.clear()
-
+                    sig = f"{target_stage}단계 매수실행"
+                else:
+                    sig = "대기"
             else:
-                if len(executed_buy_stages) > 0:
-                    max_done = max(executed_buy_stages)
+                if len(executed_stages) > 0:
+                    max_done = max(executed_stages)
                     is_in_profit = (p > avg_buy_price) if avg_buy_price > 0 else False
 
-                    if s_val >= -5 and 4 not in executed_sell_stages and is_in_profit:
-                        executed_sell_stages.add(4)
-                        cum_invest_ratio = min(cum_invest_ratio, 0.10)
-                        sig = f"🔵 [매도실행(익절)] 평단({int(avg_buy_price):,}원) 초과 ➔ 잔여 10%"
-                    elif s_val >= -15 and 3 not in executed_sell_stages and is_in_profit:
-                        executed_sell_stages.add(3)
-                        cum_invest_ratio = min(cum_invest_ratio, 0.20)
-                        sig = f"🔵 [매도실행(일부익절)] 평단({int(avg_buy_price):,}원) 초과"
-                    elif (s_val >= -15 or s_val >= -5) and not is_in_profit:
-                        sig = f"🛡️ [보유중(손실홀딩)] S값 회복했으나 평단({int(avg_buy_price):,}원) 미달(마이너스)"
+                    # S값이 -15 이상으로 회복되었을 때 평단가 대비 진짜 수익권이면 매도(익절)
+                    if s_val >= -15 and is_in_profit and cum_invest_ratio > 0:
+                        sig = "매도실행(익절)"
+                        executed_stages.clear()
+                        cum_invest_ratio = 0.0
+                        avg_buy_price = 0.0
+                    elif s_val >= -15 and not is_in_profit:
+                        sig = "보유(홀딩)"
                     else:
-                        next_stg = max_done + 1
-                        next_s = {-6: -25, 7: -30, 8: -35, 9: -45, 10: -60}.get(next_stg, -60)
-                        cum_int = int(round(cum_invest_ratio * 100))
-                        if max_done < 10:
-                            sig = f"🛡️ [{max_done}차 매수완료(잠금)] 평단:{int(avg_buy_price):,}원 (보유 {cum_int}%)"
-                        else:
-                            sig = f"🛡️ [10차 매수완료(잠금)] 매수종료 ➔ 반등 대기 (보유 {cum_int}%)"
+                        sig = f"보유(잠금)"
                 else:
-                    sig = "🟢 [관망] 현금 100% 보유"
+                    sig = "관망"
 
         invest_pct = f"레버리지 {int(round(cum_invest_ratio * 100))}%"
         cash_pct = f"현금 {100 - int(round(cum_invest_ratio * 100))}%"
@@ -431,31 +382,27 @@ if stock_code:
         cur_sig = s['current_signal']
         
         if "매수실행" in cur_sig:
-            action_title = f"{cur_sig} ➔ 거래량 유입 및 지지 확인 완료! 오늘 매수를 실행하세요"
+            action_title = f"🔴 [{cur_sig}] ➔ 거래량 유입 및 지지 확인 완료! 오늘 매수를 실행하세요"
             action_desc = "하락 진정세와 함께 거래량이 유입되었습니다. 정해진 비중만큼 과감하게 매수를 진행하세요!"
             badge_color = "#D32F2F"
-        elif "대기" in cur_sig:
-            action_title = f"{cur_sig} ➔ 거래량 유입 및 하락 진정을 기다리는 중입니다"
+        elif cur_sig == "대기":
+            action_title = f"🟠 [대기] ➔ 거래량 유입 및 하락 진정을 기다리는 중입니다"
             action_desc = "S값 조건은 도달했으나 아직 거래량이 붙지 않았거나 급락 중이므로 매수를 보류하고 대기하세요."
             badge_color = "#E65100"
-        elif "매수완료(잠금)" in cur_sig:
-            action_title = f"{cur_sig} ➔ 해당 단계 매수 완료! 중복 매수 금지"
+        elif "보유(잠금)" in cur_sig:
+            action_title = f"🛡️ [{cur_sig}] ➔ 해당 단계 매수 완료! 중복 매수 금지"
             action_desc = "이미 현 단계 매수를 마쳤습니다. 다음 조건까지 내려가기 전에는 추가 매수를 금지하고 관망하세요."
             badge_color = "#455A64"
-        elif "입질매수" in cur_sig:
-            action_title = f"{cur_sig} ➔ 6~7차 가벼운 입질매수(각 3%) 구간입니다!"
-            action_desc = "하락 초입이므로 가볍게 3%만 담고 다음 시그널을 대기합니다."
-            badge_color = "#FF8F00"
         elif "매도실행" in cur_sig:
-            action_title = f"{cur_sig} ➔ 평단가 대비 진짜 수익권입니다! 수익을 실현하세요"
+            action_title = f"🔵 [{cur_sig}] ➔ 평단가 대비 진짜 수익권입니다! 수익을 실현하세요"
             action_desc = "바닥을 탈출해 평단가 위로 올라왔습니다. 원칙에 따라 분할 매도하여 현금을 확보하세요."
             badge_color = "#1976D2"
-        elif "보유중(손실홀딩)" in cur_sig:
-            action_title = f"{cur_sig} ➔ S값은 회복되었으나 아직 손실 중이므로 홀딩합니다"
+        elif "보유(홀딩)" in cur_sig:
+            action_title = f"🛡️ [{cur_sig}] ➔ S값은 회복되었으나 아직 손실 중이므로 홀딩합니다"
             action_desc = "지표상 회복 구간에 진입했으나 내 평단가보다 낮으므로 익절하지 않고 안전하게 보유(홀딩)합니다."
             badge_color = "#2E7D32"
         else:
-            action_title = f"{cur_sig} ➔ 1~5차 얕은 조정 구간입니다."
+            action_title = f"🟢 [관망] ➔ 1~5차 얕은 조정 구간입니다"
             action_desc = "어설픈 하락이나 요동(휩쏘) 장세에서는 매수를 자제하고 현금 100%를 유지하세요."
             badge_color = "#2E7D32"
 
@@ -474,19 +421,23 @@ if stock_code:
         c3.metric("현재 누적 투입 비중", s['invest_pct'])
         c4.metric("보호 중인 현금 비중", s['cash_pct'])
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 평단가 검증 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 5단계 매매 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 거래량 셀이 줄 바꿈 없이 한 줄로 깔끔하게 보이도록 모바일 가독성이 최적화된 마스터 표입니다.")
+            st.caption("📈 5단계 매수·매도 기준과 깔끔한 [대기]·[관망] 표기, 평단가 검증 익절 룰이 적용된 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
         with tab2:
-            st.markdown("##### 🛡️ 평단가 검증형 매도(익절) 안전 룰")
+            st.markdown("##### 🎯 [새로운 5단계] 실전 매수·매도 표준 가이드")
             guide_data = [
-                {"상태": "🔴 [매수실행]", "조건": "8~10차 S값 도달 + 거래량 유입", "행동 가이드": "비중을 실어 바닥 물량 매수 (평단가 자동 계산)"},
-                {"상태": "🔵 [매도실행(익절)]", "조건": "S값 회복 조건(-5, -5 이상) + **현재가 > 평단가**", "행동 가이드": "진짜 수익권일 때만 분할 매도 및 현금화"},
-                {"상태": "🛡️ [보유중(손실홀딩)]", "조건": "S값은 회복했으나 **현재가 ≤ 평단가**", "행동 가이드": "아직 마이너스이므로 가짜 익절에 속지 않고 홀딩 유지"},
+                {"구분": "🟢 관망", "조건": "S ≥ -20", "비중": "0%", "행동 가이드": "안전 구간 ➔ 현금 100% 보유 (매수 없음)"},
+                {"구분": "🟡 1단계 매수", "조건": "S ≤ -25 + 거래량/지지", "비중": "10%", "행동 가이드": "하락 초입 ➔ 가벼운 입질 매수실행"},
+                {"구분": "🟠 2단계 매수", "조건": "S ≤ -35 + 거래량/지지", "비중": "15%", "행동 가이드": "하락 심화 ➔ 비중 확대 매수실행"},
+                {"구분": "🔴 3단계 매수", "조건": "S ≤ -45 + 거래량/지지", "비중": "35%", "행동 가이드": "공포 구간 ➔ 과감한 승부수 매수실행"},
+                {"구분": "🔴 4단계 매수", "조건": "S ≤ -60 + 거래량/지지", "비중": "40%", "행동 가이드": "극단적 바닥 ➔ 잔여 현금 전액 매수실행"},
+                {"구분": "🔵 매도실행(익절)", "조건": "S값 회복 + **현재가 > 평단가**", "비중": "현금화", "행동 가이드": "진짜 수익권일 때만 깔끔하게 분할 매도"},
+                {"구분": "🛡️ 보유(홀딩)", "조건": "S값 회복 + **현재가 ≤ 평단가**", "비중": "홀딩 유지", "행동 가이드": "아직 손실 중이므로 가짜 익절에 속지 않고 홀딩"},
             ]
             st.dataframe(pd.DataFrame(guide_data), use_container_width=True)
 
@@ -545,7 +496,7 @@ if stock_code:
                     total_invested_all += inv_amt
                     total_eval_all += eval_amt
 
-            if items_to_delete:
+            if items_test := items_to_delete:
                 for itm in items_to_delete:
                     st.session_state.my_portfolio_items.remove(itm)
                 st.rerun()
