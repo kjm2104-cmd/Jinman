@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 ([매수]·[매도] 직관적 표준화)")
+st.subheader("📈 간편 교대 매매 시스템 (평단가 검증형 실전 매도 엔진)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -196,8 +196,10 @@ def style_table(df_target, df_full):
                     styles[idx] = 'background-color: #ECEFF1; color: #455A64; font-weight: bold;'
                 elif '입질매수' in val_str:
                     styles[idx] = 'background-color: #FF8F00; color: #FFFFFF; font-weight: bold;'
-                elif '매도' in val_str:
-                    styles[idx] = 'background-color: #1976D2; color: #FFFFFF; font-weight: bold;'
+                elif '매도실행' in val_str:
+                    styles[idx] = 'background-color: #1976D2; color: #FFFFFF; font-weight: 900;'
+                elif '보유중(손실홀딩)' in val_str:
+                    styles[idx] = 'background-color: #E8F5E9; color: #2E7D32; font-weight: bold;'
         return styles
 
     return df_target.style.apply(lambda row: color_styler(row.name, row), axis=1).format({'종가(B)': '{:,}', '중심선(D)': '{:,}', '거래량(E)': '{:,}', '거래비율(F)': '{:.2f}'}, na_rep="-")
@@ -236,6 +238,7 @@ def calculate_indicator_sheet(df_raw):
     executed_sell_stages = set()
     armed_stage = 0
     cum_invest_ratio = 0.0
+    avg_buy_price = 0.0  # 🔥 평단가 추적 변수
 
     stage_weights = {6: 0.03, 7: 0.03, 8: 0.15, 9: 0.34, 10: 0.45}
 
@@ -282,10 +285,15 @@ def calculate_indicator_sheet(df_raw):
 
         if s_val >= 0:
             if cum_invest_ratio > 0 or len(executed_buy_stages) > 0:
-                sig = "🔵 [전량 매도(익절)] 현금화 완료"
-                executed_buy_stages.clear()
-                armed_stage = 0
-                cum_invest_ratio = 0.0
+                is_in_profit = (p > avg_buy_price) if avg_buy_price > 0 else True
+                if is_in_profit:
+                    sig = "🔵 [매도실행(전량익절)] 평단 대비 수익권 완료"
+                    executed_buy_stages.clear()
+                    armed_stage = 0
+                    cum_invest_ratio = 0.0
+                    avg_buy_price = 0.0
+                else:
+                    sig = f"🛡️ [보유중(손실홀딩)] S값 회복(≥0)했으나 평단({int(avg_buy_price):,}원) 미달"
             else:
                 sig = "🟢 [관망] 현금 100% 보유"
         else:
@@ -309,13 +317,23 @@ def calculate_indicator_sheet(df_raw):
                     armed_stage = target_buy_stage
                 
                 if is_heavy_trigger:
+                    added_weight = 0.0
                     for stg in range(6, armed_stage + 1):
                         if stg not in executed_buy_stages:
                             executed_buy_stages.add(stg)
-                            cum_invest_ratio = min(1.0, cum_invest_ratio + stage_weights[stg])
+                            added_weight += stage_weights[stg]
+                    
+                    if added_weight > 0:
+                        if cum_invest_ratio == 0:
+                            avg_buy_price = p
+                        else:
+                            old_ratio = cum_invest_ratio
+                            cum_invest_ratio = min(1.0, cum_invest_ratio + added_weight)
+                            avg_buy_price = (avg_buy_price * old_ratio + p * added_weight) / cum_invest_ratio
+
                     pct_int = int(round(stage_weights[armed_stage] * 100))
                     cum_int = int(round(cum_invest_ratio * 100))
-                    sig = f"🔴 [{armed_stage}차 매수실행] {pct_int}% 매수 (누적 {cum_int}%)"
+                    sig = f"🔴 [{armed_stage}차 매수실행] 평단:{int(avg_buy_price):,}원 (누적 {cum_int}%)"
                     armed_stage = 0
                     executed_sell_stages.clear()
                 else:
@@ -325,31 +343,46 @@ def calculate_indicator_sheet(df_raw):
                 if not is_light_trigger:
                     sig = f"🟠 [{target_buy_stage}차 대기] 급락 진정 대기"
                 else:
+                    added_weight = 0.0
                     for stg in range(6, target_buy_stage + 1):
                         if stg not in executed_buy_stages:
                             executed_buy_stages.add(stg)
-                            cum_invest_ratio = min(1.0, cum_invest_ratio + stage_weights[stg])
+                            added_weight += stage_weights[stg]
+                    
+                    if added_weight > 0:
+                        if cum_invest_ratio == 0:
+                            avg_buy_price = p
+                        else:
+                            old_ratio = cum_invest_ratio
+                            cum_invest_ratio = min(1.0, cum_invest_ratio + added_weight)
+                            avg_buy_price = (avg_buy_price * old_ratio + p * added_weight) / cum_invest_ratio
+
                     cum_int = int(round(cum_invest_ratio * 100))
-                    sig = f"🟡 [{target_buy_stage}차 입질매수] 3% 매수 (누적 {cum_int}%)"
+                    sig = f"🟡 [{target_buy_stage}차 입질매수] 평단:{int(avg_buy_price):,}원 (누적 {cum_int}%)"
                     executed_sell_stages.clear()
 
             else:
                 if len(executed_buy_stages) > 0:
                     max_done = max(executed_buy_stages)
-                    if s_val >= -5 and 4 not in executed_sell_stages:
+                    is_in_profit = (p > avg_buy_price) if avg_buy_price > 0 else False
+
+                    # 🔥 평단가 대비 진짜 수익권일 때만 매도(익절) 실행
+                    if s_val >= -5 and 4 not in executed_sell_stages and is_in_profit:
                         executed_sell_stages.add(4)
                         cum_invest_ratio = min(cum_invest_ratio, 0.10)
-                        sig = "🔵 [4차 매도(익절)] 잔여 10% 유지"
-                    elif s_val >= -15 and 3 not in executed_sell_stages:
+                        sig = f"🔵 [매도실행(익절)] 평단({int(avg_buy_price):,}원) 초과 ➔ 잔여 10%"
+                    elif s_val >= -15 and 3 not in executed_sell_stages and is_in_profit:
                         executed_sell_stages.add(3)
                         cum_invest_ratio = min(cum_invest_ratio, 0.20)
-                        sig = "🔵 [3차 매도(익절)] 일부 수익실현"
+                        sig = f"🔵 [매도실행(일부익절)] 평단({int(avg_buy_price):,}원) 초과"
+                    elif (s_val >= -15 or s_val >= -5) and not is_in_profit:
+                        sig = f"🛡️ [보유중(손실홀딩)] S값 회복했으나 평단({int(avg_buy_price):,}원) 미달(마이너스)"
                     else:
                         next_stg = max_done + 1
                         next_s = {-6: -25, 7: -30, 8: -35, 9: -45, 10: -60}.get(next_stg, -60)
                         cum_int = int(round(cum_invest_ratio * 100))
                         if max_done < 10:
-                            sig = f"🛡️ [{max_done}차 매수완료(잠금)] {next_stg}차(S≤{next_s}) 전 대기 (보유 {cum_int}%)"
+                            sig = f"🛡️ [{max_done}차 매수완료(잠금)] 평단:{int(avg_buy_price):,}원 (보유 {cum_int}%)"
                         else:
                             sig = f"🛡️ [10차 매수완료(잠금)] 매수종료 ➔ 반등 대기 (보유 {cum_int}%)"
                 else:
@@ -412,10 +445,14 @@ if stock_code:
             action_title = f"{cur_sig} ➔ 6~7차 가벼운 입질매수(각 3%) 구간입니다!"
             action_desc = "하락 초입이므로 가볍게 3%만 담고 다음 시그널을 대기합니다."
             badge_color = "#FF8F00"
-        elif "매도" in cur_sig:
-            action_title = f"{cur_sig} ➔ 상승 회복 구간입니다. 수익을 실현하세요!"
-            action_desc = "바닥을 탈출해 S값이 회복 중입니다. 원칙에 따라 분할 매도하여 현금을 확보하세요."
+        elif "매도실행" in cur_sig:
+            action_title = f"{cur_sig} ➔ 평단가 대비 진짜 수익권입니다! 수익을 실현하세요"
+            action_desc = "바닥을 탈출해 평단가 위로 올라왔습니다. 원칙에 따라 분할 매도하여 현금을 확보하세요."
             badge_color = "#1976D2"
+        elif "보유중(손실홀딩)" in cur_sig:
+            action_title = f"{cur_sig} ➔ S값은 회복되었으나 아직 손실 중이므로 홀딩합니다"
+            action_desc = "지표상 회복 구간에 진입했으나 내 평단가보다 낮으므로 익절하지 않고 안전하게 보유(홀딩)합니다."
+            badge_color = "#2E7D32"
         else:
             action_title = f"{cur_sig} ➔ 1~5차 얕은 조정 구간입니다."
             action_desc = "어설픈 하락이나 요동(휩쏘) 장세에서는 매수를 자제하고 현금 100%를 유지하세요."
@@ -436,21 +473,19 @@ if stock_code:
         c3.metric("현재 누적 투입 비중", s['invest_pct'])
         c4.metric("보호 중인 현금 비중", s['cash_pct'])
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 매매 표준 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 평단가 검증 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 [매수실행], [입질매수], [매도], [대기], [잠금] 등 표준화된 용어가 적용된 마스터 표입니다.")
+            st.caption("📈 평단가 대비 실제 수익권일 때만 [매도실행]이 뜨고, 손실 중일 때는 [보유중(손실홀딩)]으로 방어하는 정교한 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
         with tab2:
-            st.markdown("##### 🎯 [실전 표준] 매수·매도 교대 매매 플랜")
+            st.markdown("##### 🛡️ 평단가 검증형 매도(익절) 안전 룰")
             guide_data = [
-                {"단계": "1~5차", "S값 조건": "S ≥ -20", "비중": "0% (관망)", "매매 가이드": "얕은 조정 무시 ➔ 현금 100% 보유"},
-                {"단계": "6~7차", "S값 조건": "S ≤ -25 ~ -30", "비중": "각 3%", "매매 가이드": "하락 초입 ➔ 3% 가벼운 입질매수 (1회 잠금)"},
-                {"단계": "8차", "S값 조건": "S ≤ -35", "비중": "15%", "매매 가이드": "🔥 **[화력 증폭]** 거래량 유입 및 하락 진정 시 매수실행"},
-                {"단계": "9차", "S값 조건": "S ≤ -45", "비중": "34%", "매매 가이드": "🚨 **[본격 승부수]** 패닉셀 구간 거래량 터질 때 매수실행"},
-                {"단계": "10차", "S값 조건": "S ≤ -60", "비중": "45%", "매매 가이드": "🔴 **[최후 방어]** 극단적 바닥 -60 구간 잔여 현금 전액 매수실행"},
+                {"상태": "🔴 [매수실행]", "조건": "8~10차 S값 도달 + 거래량 유입", "행동 가이드": "비중을 실어 바닥 물량 매수 (평단가 자동 계산)"},
+                {"상태": "🔵 [매도실행(익절)]", "조건": "S값 회복 조건(-5, -5 이상) + **현재가 > 평단가**", "행동 가이드": "진짜 수익권일 때만 분할 매도 및 현금화"},
+                {"상태": "🛡️ [보유중(손실홀딩)]", "조건": "S값은 회복했으나 **현재가 ≤ 평단가**", "행동 가이드": "아직 마이너스이므로 가짜 익절에 속지 않고 홀딩 유지"},
             ]
             st.dataframe(pd.DataFrame(guide_data), use_container_width=True)
 
