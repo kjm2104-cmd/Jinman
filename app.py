@@ -23,7 +23,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (S값 도달 당일 즉발 신호 버전)")
+st.subheader("📈 간편 교대 매매 시스템 (실시간 단계별 목표가 자동 안내)")
 
 # 네이버 금융 일별 시세 크롤링 함수 (개별 종목 및 지수 공용)
 @st.cache_data(ttl=3600)
@@ -231,6 +231,8 @@ def calculate_indicator_sheet(df_raw):
     up_phase = 'M'; down_phase = 'Q'
     M8, N8, P8, Q8 = peak, peak, peak, peak
 
+    max_mn, min_pq = peak, trough
+
     for i in range(n):
         p = int(round(closes[i]))
         
@@ -257,7 +259,6 @@ def calculate_indicator_sheet(df_raw):
         lm = int(round((p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
         s_val = lm - mm
 
-        # 🔥 안전 필터(거래량/밑꼬리) 및 쿨다운 전면 제거 ➔ S값 조건 도달 당일 곧바로 즉발 신호 발동
         target_stage = 0
         if s_val <= -55: target_stage = 7
         elif s_val <= -52: target_stage = 6
@@ -303,6 +304,7 @@ def calculate_indicator_sheet(df_raw):
         'B1': int(closes[-1]), 'C1': int(vols[-1]), 'cur_chg': chg[-1] * 100,
         'MM': mm_list[-1], 'PM': pm_list[-1], 'LM': lm_list[-1], 'S': s_list[-1],
         'current_signal': buy_signals[-1],
+        'max_mn': max_mn, 'min_pq': min_pq,
         'state': "상승 파동 중" if state == 'UP' else "하락 파동 중"
     }
     return df_out, summary
@@ -328,6 +330,21 @@ if stock_code:
         current_s_val = s['S']
         cur_sig = s['current_signal']
         
+        # 🔥 실시간 단계별 도달 목표가 계산 (마지막 날 기준 max_mn, min_pq 활용)
+        max_mn_val = s.get('max_mn', 0)
+        min_pq_val = s.get('min_pq', 0)
+        
+        stages_info = [
+            (1, -25, "1차"), (2, -30, "2차"), (3, -35, "3차"),
+            (4, -42, "4차"), (5, -49, "5차"), (6, -52, "6차"), (7, -55, "7차(바닥)")
+        ]
+        
+        target_prices_html = []
+        if max_mn_val > 0 and min_pq_val > 0:
+            for stg, s_tgt, name in stages_info:
+                tp = r10(max_mn_val + (s_tgt * min_pq_val) / 100.0)
+                target_prices_html.append(f"<b>{name}</b>: <span style='color:#D32F2F;'>{tp:,}원 이하</span> (S≤{s_tgt})")
+
         if "진입 구간" in cur_sig:
             action_title = f"🔴 [{cur_sig}] ➔ S값 조건 도달 당일 즉발 진입 구간입니다!"
             action_desc = "지연 없이 S값 조건에 도달한 당일 곧바로 포착되었습니다. 원칙에 따라 대응하세요."
@@ -350,6 +367,15 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
+        # 🔥 실시간 지정가 세팅 가이드 박스 추가
+        if target_prices_html:
+            st.markdown(f"""
+            <div style="background-color: #FFF3E0; border: 1px solid #FFB74D; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 0.88rem; color: #333; line-height: 1.5;">
+                <b>🎯 [실전 지정가 세팅 가이드] 다음 영업일 S값 단계별 도달 목표가</b><br>
+                {' | '.join(target_prices_html)}
+            </div>
+            """, unsafe_allow_html=True)
+
         c1, c2, c3, c4 = st.columns(4)
         c1.metric(f"{stock_name} 현재가", f"{s['B1']:,}원", f"{s['cur_chg']:+.2f}%")
         c2.metric("S값 / 낙폭(PM)", f"S: {s['S']}", f"PM: {s['PM']}%")
@@ -359,7 +385,7 @@ if stock_code:
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 7단계 가이드 & 자동금액 계산기", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 S값 조건 도달 당일 곧바로 진입 신호가 발동되는 즉발형 마스터 표입니다.")
+            st.caption("📈 실시간 S값 단계별 도달 목표가와 당일 즉발 진입 구간이 연동된 실전 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
