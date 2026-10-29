@@ -13,17 +13,17 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 모바일 가독성 및 표 칸 넓이 최적화 CSS
+# 모바일 가독성 및 표 칸 넓이 최적화 CSS (거래량 공간 확보)
 st.markdown("""
 <style>
     .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
     div[data-testid="stMetricValue"] { font-size: 1.25rem; font-weight: 700; }
     div[data-testid="stMetricLabel"] { font-size: 0.85rem; }
-    table dataframe, th, td { font-size: 0.85rem !important; padding: 4px 6px !important; }
+    table dataframe, th, td { font-size: 0.82rem !important; padding: 4px 5px !important; }
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (5단계 매수·매도 표준화)")
+st.subheader("📈 간편 교대 매매 시스템 (매수 간격 넓히기 & 거래량 가독성 강화)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -138,6 +138,7 @@ def style_table(df_target, df_full):
             if col_name in ['종가(B)', '등락률(C)'] and prev_close is not None:
                 styles[idx] = 'color: #D32F2F; font-weight: bold;' if curr_close > prev_close else ('color: #1976D2; font-weight: bold;' if curr_close < prev_close else 'color: #111111;')
             
+            # 🔥 거래량(E) 칸 넓고 시원하게 보이도록 가독성 최적화
             elif col_name == '거래량(E)':
                 try:
                     curr_vol = float(val)
@@ -147,11 +148,11 @@ def style_table(df_target, df_full):
                     if vol_diff_ratio >= 0:
                         ratio = min(1.0, vol_diff_ratio / 1.0)
                         r = 255; g = int(240 - ratio * 180); b = int(240 - ratio * 180)
-                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.3 else "#222222"}; font-weight: bold; white-space: nowrap;'
+                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.3 else "#222222"}; font-weight: bold; white-space: nowrap; text-align: right;'
                     else:
                         ratio = min(1.0, abs(vol_diff_ratio) / 0.5)
                         r = int(240 - ratio * 180); g = int(240 - ratio * 180); b = 255
-                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#0D47A1" if ratio > 0.3 else "#222222"}; font-weight: bold; white-space: nowrap;'
+                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#0D47A1" if ratio > 0.3 else "#222222"}; font-weight: bold; white-space: nowrap; text-align: right;'
                 except:
                     pass
 
@@ -187,20 +188,21 @@ def style_table(df_target, df_full):
                 except:
                     pass
 
+            # 🔥 매수신호 칸 문구를 간결하게 압축하여 공간 확보
             elif col_name == '매수신호(레버리지/인버스)':
                 val_str = str(val)
                 if '매수실행' in val_str:
-                    styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
+                    styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
                 elif val_str == '대기':
-                    styles[idx] = 'background-color: #FFF3E0; color: #E65100; font-weight: 900; border: 1px solid #FFB74D;'
+                    styles[idx] = 'background-color: #FFF3E0; color: #E65100; font-weight: 900; border: 1px solid #FFB74D; white-space: nowrap;'
                 elif '보유(잠금)' in val_str:
-                    styles[idx] = 'background-color: #ECEFF1; color: #455A64; font-weight: bold;'
+                    styles[idx] = 'background-color: #ECEFF1; color: #455A64; font-weight: bold; white-space: nowrap;'
                 elif '매도실행' in val_str:
-                    styles[idx] = 'background-color: #1976D2; color: #FFFFFF; font-weight: 900;'
+                    styles[idx] = 'background-color: #1976D2; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
                 elif '보유(홀딩)' in val_str:
-                    styles[idx] = 'background-color: #E8F5E9; color: #2E7D32; font-weight: bold;'
+                    styles[idx] = 'background-color: #E8F5E9; color: #2E7D32; font-weight: bold; white-space: nowrap;'
                 elif val_str == '관망':
-                    styles[idx] = 'color: #2E7D32; font-weight: bold;'
+                    styles[idx] = 'color: #2E7D32; font-weight: bold; white-space: nowrap;'
         return styles
 
     return df_target.style.apply(lambda row: color_styler(row.name, row), axis=1).format({'종가(B)': '{:,}', '중심선(D)': '{:,}', '거래량(E)': '{:,}', '거래비율(F)': '{:.2f}'}, na_rep="-")
@@ -235,13 +237,12 @@ def calculate_indicator_sheet(df_raw):
     up_phase = 'M'; down_phase = 'Q'
     M8, N8, P8, Q8 = peak, peak, peak, peak
 
-    # 🔥 5단계 매수 비중 배분 (총 100%)
-    # 1단계(S≤-25: 10%), 2단계(S≤-35: 15%), 3단계(S≤-45: 35%), 4단계(S≤-60: 40%)
     stage_weights = {1: 0.10, 2: 0.15, 3: 0.35, 4: 0.40}
     
     executed_stages = set()
     cum_invest_ratio = 0.0
     avg_buy_price = 0.0
+    last_buy_index = -99  # 🔥 매수 간격(쿨다운) 유지를 위한 마지막 매수 인덱스 기록
 
     for i in range(n):
         p = int(round(closes[i]))
@@ -279,10 +280,8 @@ def calculate_indicator_sheet(df_raw):
         lower_wick_ratio = (min(p, open_p) - low_p) / candle_range if candle_range > 0 else 0.0
         is_falling_knife = (cur_chg <= -0.025) and (p < ema[i])
 
-        # 매수 격발 조건 (거래량 유입 또는 하락 진정)
         is_trigger_ready = (v_spike or lower_wick_ratio >= 0.3 or cur_chg >= -0.015) and not is_falling_knife
 
-        # 현재 S값에 따른 목표 매수 단계 결정 (1~4단계)
         target_stage = 0
         if s_val <= -60: target_stage = 4
         elif s_val <= -45: target_stage = 3
@@ -297,13 +296,17 @@ def calculate_indicator_sheet(df_raw):
                     executed_stages.clear()
                     cum_invest_ratio = 0.0
                     avg_buy_price = 0.0
+                    last_buy_index = -99
                 else:
                     sig = "보유(홀딩)"
             else:
                 sig = "관망"
         else:
+            # 🔥 [분할 매수 간격 넓히기 쿨다운 룰] 직전 매수 후 최소 2거래일 이상 지났거나 더 깊은 단계일 때만 허용
+            is_cooldown_passed = (i - last_buy_index >= 2) or (target_stage > max(executed_stages, default=0))
+
             if target_stage > 0 and target_stage not in executed_stages:
-                if is_trigger_ready:
+                if is_trigger_ready and is_cooldown_passed:
                     added_weight = 0.0
                     for stg in range(1, target_stage + 1):
                         if stg not in executed_stages:
@@ -318,7 +321,7 @@ def calculate_indicator_sheet(df_raw):
                             cum_invest_ratio = min(1.0, cum_invest_ratio + added_weight)
                             avg_buy_price = (avg_buy_price * old_ratio + p * added_weight) / cum_invest_ratio
 
-                    cum_int = int(round(cum_invest_ratio * 100))
+                    last_buy_index = i  # 매수 시점 기록
                     sig = f"{target_stage}단계 매수실행"
                 else:
                     sig = "대기"
@@ -327,12 +330,12 @@ def calculate_indicator_sheet(df_raw):
                     max_done = max(executed_stages)
                     is_in_profit = (p > avg_buy_price) if avg_buy_price > 0 else False
 
-                    # S값이 -15 이상으로 회복되었을 때 평단가 대비 진짜 수익권이면 매도(익절)
                     if s_val >= -15 and is_in_profit and cum_invest_ratio > 0:
                         sig = "매도실행(익절)"
                         executed_stages.clear()
                         cum_invest_ratio = 0.0
                         avg_buy_price = 0.0
+                        last_buy_index = -99
                     elif s_val >= -15 and not is_in_profit:
                         sig = "보유(홀딩)"
                     else:
@@ -387,7 +390,7 @@ if stock_code:
             badge_color = "#D32F2F"
         elif cur_sig == "대기":
             action_title = f"🟠 [대기] ➔ 거래량 유입 및 하락 진정을 기다리는 중입니다"
-            action_desc = "S값 조건은 도달했으나 아직 거래량이 붙지 않았거나 급락 중이므로 매수를 보류하고 대기하세요."
+            action_desc = "S값 조건은 도달했으나 쿨다운(간격) 대기 중이거나 거래량이 부족하므로 매수를 보류하세요."
             badge_color = "#E65100"
         elif "보유(잠금)" in cur_sig:
             action_title = f"🛡️ [{cur_sig}] ➔ 해당 단계 매수 완료! 중복 매수 금지"
@@ -402,7 +405,7 @@ if stock_code:
             action_desc = "지표상 회복 구간에 진입했으나 내 평단가보다 낮으므로 익절하지 않고 안전하게 보유(홀딩)합니다."
             badge_color = "#2E7D32"
         else:
-            action_title = f"🟢 [관망] ➔ 1~5차 얕은 조정 구간입니다"
+            action_title = f"🟢 [관망] ➔ 안전 구간입니다"
             action_desc = "어설픈 하락이나 요동(휩쏘) 장세에서는 매수를 자제하고 현금 100%를 유지하세요."
             badge_color = "#2E7D32"
 
@@ -424,18 +427,18 @@ if stock_code:
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 5단계 매매 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 5단계 매수·매도 기준과 깔끔한 [대기]·[관망] 표기, 평단가 검증 익절 룰이 적용된 마스터 표입니다.")
+            st.caption("📈 매수 간격(쿨다운) 룰이 적용되었으며, 거래량(E) 칸의 공간이 넓어져 수치가 한눈에 잘 들어오는 최적화된 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
         with tab2:
-            st.markdown("##### 🎯 [새로운 5단계] 실전 매수·매도 표준 가이드")
+            st.markdown("##### 🎯 [5단계 매수·매도 표준 가이드 & 쿨다운 룰]")
             guide_data = [
                 {"구분": "🟢 관망", "조건": "S ≥ -20", "비중": "0%", "행동 가이드": "안전 구간 ➔ 현금 100% 보유 (매수 없음)"},
-                {"구분": "🟡 1단계 매수", "조건": "S ≤ -25 + 거래량/지지", "비중": "10%", "행동 가이드": "하락 초입 ➔ 가벼운 입질 매수실행"},
-                {"구분": "🟠 2단계 매수", "조건": "S ≤ -35 + 거래량/지지", "비중": "15%", "행동 가이드": "하락 심화 ➔ 비중 확대 매수실행"},
-                {"구분": "🔴 3단계 매수", "조건": "S ≤ -45 + 거래량/지지", "비중": "35%", "행동 가이드": "공포 구간 ➔ 과감한 승부수 매수실행"},
-                {"구분": "🔴 4단계 매수", "조건": "S ≤ -60 + 거래량/지지", "비중": "40%", "행동 가이드": "극단적 바닥 ➔ 잔여 현금 전액 매수실행"},
+                {"구분": "🟡 1단계 매수", "조건": "S ≤ -25 + 거래량/지지 + 쿨다운 통과", "비중": "10%", "행동 가이드": "하락 초입 ➔ 가벼운 입질 매수실행"},
+                {"구분": "🟠 2단계 매수", "조건": "S ≤ -35 + 거래량/지지 + 쿨다운 통과", "비중": "15%", "행동 가이드": "하락 심화 ➔ 비중 확대 매수실행"},
+                {"구분": "🔴 3단계 매수", "조건": "S ≤ -45 + 거래량/지지 + 쿨다운 통과", "비중": "35%", "행동 가이드": "공포 구간 ➔ 과감한 승부수 매수실행"},
+                {"구분": "🔴 4단계 매수", "조건": "S ≤ -60 + 거래량/지지 + 쿨다운 통과", "비중": "40%", "행동 가이드": "극단적 바닥 ➔ 잔여 현금 전액 매수실행"},
                 {"구분": "🔵 매도실행(익절)", "조건": "S값 회복 + **현재가 > 평단가**", "비중": "현금화", "행동 가이드": "진짜 수익권일 때만 깔끔하게 분할 매도"},
                 {"구분": "🛡️ 보유(홀딩)", "조건": "S값 회복 + **현재가 ≤ 평단가**", "비중": "홀딩 유지", "행동 가이드": "아직 손실 중이므로 가짜 익절에 속지 않고 홀딩"},
             ]
@@ -484,7 +487,7 @@ if stock_code:
                     with cols[4]:
                         disp_name = item["confirmed_name"] if item["confirmed_name"] else "종목 미조회"
                         st.markdown(f"<div style='font-size: 0.75rem; color: #555; margin-bottom: 1px;'><b>{disp_name}</b></div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='font-size: 1.0rem; font-weight: bold; color: #D32F2F;'>{live_curr_price:,}원</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size: 1.0rem; font-weight: bold; color: #D32F2F;>{live_curr_price:,}원</div>", unsafe_allow_html=True)
 
                     with cols[5]:
                         st.markdown("<div style='margin-top: 22px;'></div>", unsafe_allow_html=True)
@@ -496,7 +499,7 @@ if stock_code:
                     total_invested_all += inv_amt
                     total_eval_all += eval_amt
 
-            if items_test := items_to_delete:
+            if items_to_delete:
                 for itm in items_to_delete:
                     st.session_state.my_portfolio_items.remove(itm)
                 st.rerun()
