@@ -376,37 +376,72 @@ if stock_code:
             st.dataframe(pd.DataFrame(sell_guide_data), use_container_width=True)
 
         with tab3:
-            st.markdown(f"##### 💼 [{stock_name}] 실전 보유 포트폴리오 성과 분석기")
-            st.caption("내 평단가와 보유 수량을 입력하면 현재 실시간 주가와 비교하여 평가금액, 손익, 수익률을 한눈에 계산해 드립니다.")
+            st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기")
+            st.caption("보유 중인 종목을 자유롭게 추가·삭제하고 평단가와 수량을 입력하시면, 모든 종목의 최종 합계와 총 손익이 실시간으로 계산됩니다.")
 
-            col_p1, col_p2 = st.columns(2)
-            with col_p1:
-                my_avg_price = st.number_input("내 평균 매입 단가 (원)", min_value=0, value=5330, step=10)
-            with col_p2:
-                my_qty = st.number_input("보유 수량 (주)", min_value=0, value=5717, step=1)
+            # 세션 상태에 포트폴리오 리스트 초기화 (사용자 최근 입력값인 5,330원 / 5,717주 기본 세팅)
+            if 'my_portfolio_items' not in st.session_state:
+                st.session_state.my_portfolio_items = [
+                    {"id": 1, "name": f"{stock_name} ({stock_code})", "qty": 5717, "avg_price": 5330, "curr_price": int(s['B1'])}
+                ]
 
-            current_price = int(s['B1'])
-            total_invested = my_avg_price * my_qty
-            current_eval = current_price * my_qty
-            profit_loss = current_eval - total_invested
-            profit_rate = (current_price / my_avg_price - 1.0) * 100 if my_avg_price > 0 else 0
+            if st.button("➕ 보유 종목 추가하기"):
+                new_id = max([item["id"] for item in st.session_state.my_portfolio_items], default=0) + 1
+                st.session_state.my_portfolio_items.append({"id": new_id, "name": f"신규종목{new_id}", "qty": 100, "avg_price": 10000, "curr_price": int(s['B1'])})
+                st.rerun()
 
-            st.markdown("---")
-            
-            mc1, mc2, mc3 = st.columns(3)
-            mc1.metric("총 투자원금", f"{total_invested:,}원")
-            mc2.metric("현재 평가금액", f"{current_eval:,}원", f"{profit_rate:+.2f}%")
-            mc3.metric("평가 손익", f"{profit_loss:,}원", f"{'수익' if profit_loss >= 0 else '손실'}")
+            total_invested_all = 0
+            total_eval_all = 0
+            items_to_delete = []
 
-            # 실전 매매 가이드 조언 연동
-            st.markdown("---")
-            st.markdown("##### 💡 현재 포트폴리오 진단 및 코멘트")
-            if profit_rate <= -10:
-                st.warning(f"📉 현재 평단가 대비 수익률이 **{profit_rate:.2f}%**입니다. S값 하락 모드와 분할 매수 플랜을 참고하여 침착하게 대응하세요.")
-            elif profit_rate >= 5:
-                st.info(f"📈 현재 평단가 대비 수익률이 **{profit_rate:.2f}%**로 상승 구간입니다. S값 회복 익절 가이드를 참고하여 분할 현금화를 고려해 보세요.")
+            if not st.session_state.my_portfolio_items:
+                st.info("등록된 보유 종목이 없습니다. [➕ 보유 종목 추가하기] 버튼을 눌러 종목을 추가해 주세요.")
             else:
-                st.success(f"⚖️ 현재 평단가 근처에서 안정적으로 횡보/보합 중입니다. (수익률: **{profit_rate:.2f}%**)")
+                for idx, item in enumerate(st.session_state.my_portfolio_items):
+                    cols = st.columns([1.8, 1, 1, 1, 0.6])
+                    with cols[0]:
+                        item["name"] = st.text_input(f"종목명 {idx+1}", value=item["name"], key=f"mp_name_{item['id']}")
+                    with cols[1]:
+                        item["qty"] = st.number_input(f"수량 (주) {idx+1}", min_value=0, value=item["qty"], step=1, key=f"mp_qty_{item['id']}")
+                    with cols[2]:
+                        item["avg_price"] = st.number_input(f"평단가 (원) {idx+1}", min_value=0, value=item["avg_price"], step=10, key=f"mp_price_{item['id']}")
+                    with cols[3]:
+                        # 현재가는 상단 조회 종목(B1) 기준으로 자동 반영 또는 개별 입력 가능하게 구성
+                        item["curr_price"] = st.number_input(f"현재가 (원) {idx+1}", min_value=0, value=int(s['B1']) if stock_code in item["name"] else item["avg_price"], step=10, key=f"mp_curr_{item['id']}")
+                    with cols[4]:
+                        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                        if st.button("❌ 삭제", key=f"del_mp_{item['id']}"):
+                            items_to_delete.append(item)
+
+                    inv_amt = item["qty"] * item["avg_price"]
+                    eval_amt = item["qty"] * item["curr_price"]
+                    total_invested_all += inv_amt
+                    total_eval_all += eval_amt
+
+            if items_to_delete:
+                for itm in items_to_delete:
+                    st.session_state.my_portfolio_items.remove(itm)
+                st.rerun()
+
+            st.markdown("---")
+            st.markdown("##### 📊 포트폴리오 최종 합계 요약")
+
+            total_pl = total_eval_all - total_invested_all
+            total_pl_rate = (total_eval_all / total_invested_all - 1.0) * 100 if total_invested_all > 0 else 0
+
+            fc1, fc2, fc3 = st.columns(3)
+            fc1.metric("전체 총 투자원금", f"{total_invested_all:,}원")
+            fc2.metric("전체 총 평가금액", f"{total_eval_all:,}원", f"{total_pl_rate:+.2f}%")
+            fc3.metric("전체 총 평가 손익", f"{total_pl:,}원", f"{'수익' if total_pl >= 0 else '손실'}")
+
+            # 포트폴리오 코멘트
+            st.markdown("---")
+            if total_pl_rate <= -10:
+                st.warning(f"📉 전체 포트폴리오 종합 수익률이 **{total_pl_rate:.2f}%**입니다. S값 하락 모드와 7단계 매수 플랜에 따라 냉정하게 자금을 관리하세요.")
+            elif total_pl_rate >= 5:
+                st.info(f"📈 전체 포트폴리오 종합 수익률이 **{total_pl_rate:.2f}%**로 상승 구간입니다. S값 회복 익절 가이드에 맞춰 단계별 현금화를 검토해 보세요.")
+            else:
+                st.success(f"⚖️ 전체 포트폴리오가 안정적인 보합/횡보 구간에 있습니다. (종합 수익률: **{total_pl_rate:.2f}%**)")
 
         with tab4:
             output = BytesIO()
