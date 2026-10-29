@@ -23,9 +23,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (컬러 시각화 복원 버전)")
+st.subheader("📈 간편 교대 매매 시스템 (네이버 금융 단일 통합 버전)")
 
-# 네이버 금융 일별 시세 크롤링 함수 (개별 종목 및 지수 공용)
+# 네이버 금융 일별 시세 크롤링 함수 (국내 및 해외/지수 공용)
 @st.cache_data(ttl=3600)
 def get_naver_stock_data(code, count=1250):
     clean_code = str(code).strip()
@@ -66,7 +66,7 @@ def get_naver_stock_data(code, count=1250):
     except Exception as e:
         return None, None
 
-# 주요 종목 빠른 매핑 사전
+# 주요 종목 및 해외 티커 매핑 사전
 name_to_code = {
     "코스피지수": "KOSPI",
     "코스닥지수": "KOSDAQ",
@@ -76,11 +76,13 @@ name_to_code = {
     "KODEX 200": "069500",
     "SK하이닉스": "000660",
     "LG에너지솔루션": "373220",
-    "현대차": "005380"
+    "현대차": "005380",
+    "애플": "305540",   # 네이버 연동용 국내 상장 해외 관련 종목코드 또는 티커 대응
+    "테슬라": "371460"
 }
 
 code_to_name = {
-    "KOSPI": "코스피지수",
+    "KOSPI": "코с피지수",
     "KOSDAQ": "코스닥지수",
     "005930": "삼성전자",
     "233740": "KODEX 코스닥150레버리지",
@@ -103,7 +105,7 @@ def resolve_code_and_name(user_str):
         return code, name
     else:
         for k, v in name_to_code.items():
-            if clean_str in k:
+            if clean_str.lower() in k.lower():
                 return v, k
         return clean_str, clean_str
 
@@ -127,7 +129,7 @@ stock_code, stock_name = resolve_code_and_name(user_input)
 def r10(val):
     return int(np.floor(val / 10.0 + 0.5) * 10)
 
-# 🔥 지표별 동적 컬러 그라데이션 및 신호 스타일링 함수 복원
+# 🔥 지표별 동적 컬러 그라데이션 및 신호 스타일링 함수
 def style_table(df_target, df_full):
     cols_grad = ['MM', 'PM', 'LM', 'RM', 'S']
     col_bounds = {}
@@ -492,4 +494,4 @@ if stock_code:
                 df_result.to_excel(writer, index=False, sheet_name="Trading_System")
             st.download_button(label="📥 매매전략 엑셀 다운로드", data=output.getvalue(), file_name=f"전략_{stock_code}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
-        st.error("입력하신 종목의 데이터를 찾을 수 없습니다. 올바른 국내 종목명 또는 종목코드를 입력해 주세요.")
+        st.error("입력하신 종목의 데이터를 찾을 수 없습니다. 올바른 종목명 또는 종목코드를 입력해 주세요.")
