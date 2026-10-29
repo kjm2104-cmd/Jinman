@@ -23,9 +23,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 ([진입 구간] 표준화 버전)")
+st.subheader("📈 간편 교대 매매 시스템 (선제적 진입 & 증시 지표 연동)")
 
-# 네이버 금융 일별 시세 크롤링 함수
+# 네이버 금융 일별 시세 크롤링 함수 (개별 종목 및 지수 공용)
 @st.cache_data(ttl=3600)
 def get_naver_stock_data(code, count=1250):
     url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count={count}&requestType=0"
@@ -62,8 +62,10 @@ def get_naver_stock_data(code, count=1250):
     except Exception as e:
         return None, None
 
-# 주요 종목 빠른 매핑 사전
+# 주요 종목 빠른 매핑 사전 (코스피: KOSPI, 코스닥: KOSDAQ 지수 코드 포함)
 name_to_code = {
+    "코스피지수": "KOSPI",
+    "코스닥지수": "KOSDAQ",
     "삼성전자": "005930",
     "KODEX 코스닥150레버리지": "233740",
     "코스닥150레버리지": "233740",
@@ -73,15 +75,16 @@ name_to_code = {
     "현대차": "005380"
 }
 
-code_to_name = {v: k for k, v in name_to_code.items()}
-code_to_name.update({
+code_to_name = {
+    "KOSPI": "코스피지수",
+    "KOSDAQ": "코스닥지수",
     "005930": "삼성전자",
     "233740": "KODEX 코스닥150레버리지",
     "069500": "KODEX 200",
     "000660": "SK하이닉스",
     "373220": "LG에너지솔루션",
     "005380": "현대차"
-})
+}
 
 def resolve_code_and_name(user_str):
     clean_str = str(user_str).strip()
@@ -107,7 +110,7 @@ with st.form(key="search_form"):
         user_input = st.text_input(
             "🔍 조회할 메인 종목 또는 종목코드 입력",
             value="233740",
-            placeholder="예: 삼성전자 또는 005930"
+            placeholder="예: 삼성전자 또는 233740"
         ).strip()
     with col_in2:
         years_back = st.selectbox("조회 기간", options=[1, 2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
@@ -231,7 +234,6 @@ def calculate_indicator_sheet(df_raw):
     up_phase = 'M'; down_phase = 'Q'
     M8, N8, P8, Q8 = peak, peak, peak, peak
 
-    stage_weights = {1: 0.03, 2: 0.03, 3: 0.03, 4: 0.07, 5: 0.07, 6: 0.30, 7: 0.47}
     last_buy_index = -99
 
     for i in range(n):
@@ -270,8 +272,7 @@ def calculate_indicator_sheet(df_raw):
         lower_wick_ratio = (min(p, open_p) - low_p) / candle_range if candle_range > 0 else 0.0
         is_falling_knife = (cur_chg <= -0.025) and (p < ema[i])
 
-        is_trigger_ready = (v_spike or lower_wick_ratio >= 0.3 or cur_chg >= -0.015) and not is_falling_knife
-
+        # 🔥 1~3차 진입 구간은 하루 더 빠르게 선제 진입할 수 있도록 필터 민감도 완화 (조금 더 유연하게 포착)
         target_stage = 0
         if s_val <= -55: target_stage = 7
         elif s_val <= -52: target_stage = 6
@@ -281,13 +282,19 @@ def calculate_indicator_sheet(df_raw):
         elif s_val <= -30: target_stage = 2
         elif s_val <= -25: target_stage = 1
 
+        # 1~3차 구간은 선제적 대응을 위해 필터 완화, 4~7차는 철저한 거래량/하락진정 확인
+        if target_stage in [1, 2, 3]:
+            is_trigger_ready = (cur_chg >= -0.035) and not is_falling_knife
+        else:
+            is_trigger_ready = (v_spike or lower_wick_ratio >= 0.3 or cur_chg >= -0.015) and not is_falling_knife
+
         if s_val >= 0:
             if s_val >= -15:
                 sig = "매도 추천"
             else:
                 sig = "관망"
         else:
-            is_cooldown_passed = (i - last_buy_index >= 2)
+            is_cooldown_passed = (i - last_buy_index >= 1) # 쿨다운 간격도 하루 빠르게 단축
 
             if target_stage > 0:
                 if is_trigger_ready and is_cooldown_passed:
@@ -300,9 +307,6 @@ def calculate_indicator_sheet(df_raw):
                     sig = "대기"
             else:
                 sig = "관망"
-
-        invest_pct = "레버리지 0%"
-        cash_pct = "현금 100%"
 
         d_cur = pd.Timestamp(dates[i])
         w_slice = closes[:i+1][pd.to_datetime(dates[:i+1]) >= (d_cur - pd.DateOffset(years=1))]
@@ -325,11 +329,20 @@ def calculate_indicator_sheet(df_raw):
     summary = {
         'B1': int(closes[-1]), 'C1': int(vols[-1]), 'cur_chg': chg[-1] * 100,
         'MM': mm_list[-1], 'PM': pm_list[-1], 'LM': lm_list[-1], 'S': s_list[-1],
-        'current_signal': buy_signals[-1], 'invest_pct': invest_pct, 'cash_pct': cash_pct,
-        'invest_ratio': 0.0,
+        'current_signal': buy_signals[-1],
         'state': "상승 파동 중" if state == 'UP' else "하락 파동 중"
     }
     return df_out, summary
+
+# 🔥 코스피 및 코스닥 지수 데이터 실시간 조회
+kospi_df, _ = get_naver_stock_data("KOSPI", count=5)
+kosdaq_df, _ = get_naver_stock_data("KOSDAQ", count=5)
+
+kospi_val = int(kospi_df['Close'].iloc[-1]) if kospi_df is not None and not kospi_df.empty else 0
+kospi_chg = ((kospi_df['Close'].iloc[-1] / kospi_df['Close'].iloc[-2]) - 1.0) * 100 if kospi_df is not None and len(kospi_df) >= 2 else 0.0
+
+kosdaq_val = int(kosdaq_df['Close'].iloc[-1]) if kosdaq_df is not None and not kosdaq_df.empty else 0
+kosdaq_chg = ((kosdaq_df['Close'].iloc[-1] / kosdaq_df['Close'].iloc[-2]) - 1.0) * 100 if kosdaq_df is not None and len(kosdaq_df) >= 2 else 0.0
 
 if stock_code:
     days_count = years_back * 250
@@ -343,12 +356,12 @@ if stock_code:
         cur_sig = s['current_signal']
         
         if "진입 구간" in cur_sig:
-            action_title = f"🔴 [{cur_sig}] ➔ 거래량 유입 및 지지 확인 완료! 대응을 준비하세요"
-            action_desc = "하락 진정세와 함께 거래량이 유입되며 해당 진입 구간에 도달했습니다."
+            action_title = f"🔴 [{cur_sig}] ➔ 선제적 대응 구간 도달! 매수 기회를 검토하세요"
+            action_desc = "하락 초입 및 진입 구간에 선제적으로 진입했습니다. 원칙에 따라 대응을 준비하세요!"
             badge_color = "#D32F2F"
         elif cur_sig == "대기":
-            action_title = f"🟠 [대기] ➔ 거래량 유입 및 하락 진정을 기다리는 중입니다"
-            action_desc = "S값 조건은 도달했으나 쿨다운(간격) 대기 중이거나 거래량이 부족하므로 관망하세요."
+            action_title = f"🟠 [대기] ➔ 조건 만족 후 거래량 및 하락 진정 대기 중"
+            action_desc = "S값 조건은 도달했으나 안전한 체결을 위해 대기 중입니다."
             badge_color = "#E65100"
         elif cur_sig == "매도 추천":
             action_title = f"🔵 [{cur_sig}] ➔ 지표가 회복되었습니다! 수익 실현을 검토하세요"
@@ -368,16 +381,17 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
+        # 🔥 상단 메트릭: 현재가, S값, 코스피 지수, 코스닥 지수 연동
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("현재가 (B1)", f"{s['B1']:,}원", f"{s['cur_chg']:+.2f}%")
-        c2.metric("S값 / 실제낙폭(PM)", f"S: {s['S']}", f"PM: {s['PM']}% / LM: {s['LM']}%")
-        c3.metric("현재 누적 투입 비중", s['invest_pct'])
-        c4.metric("보호 중인 현금 비중", s['cash_pct'])
+        c1.metric(f"{stock_name} 현재가", f"{s['B1']:,}원", f"{s['cur_chg']:+.2f}%")
+        c2.metric("S값 / 낙폭(PM)", f"S: {s['S']}", f"PM: {s['PM']}%")
+        c3.metric("코스피(KOSPI) 지수", f"{kospi_val:,}", f"{kospi_chg:+.2f}%")
+        c4.metric("코스닥(KOSDAQ) 지수", f"{kosdaq_val:,}", f"{kosdaq_chg:+.2f}%")
 
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 새로운 7단계 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 [X차 진입 구간], [매도 추천]으로 객관적 위치 안내가 적용된 마스터 표입니다.")
+            st.caption("📈 1~3차 선제적 진입 및 코스피·코스닥 지수가 상단에 연동된 실전 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
@@ -385,11 +399,11 @@ if stock_code:
             st.markdown("##### 🎯 [새로운 7단계 맞춤형 매매 가이드]")
             guide_data = [
                 {"구분": "🟢 관망", "조건": "S ≥ -20 ( ~ -25)", "비중": "0%", "행동 가이드": "안전 구간 ➔ 현금 100% 사수 (매수 없음)"},
-                {"구분": "🟡 1차 진입 구간", "조건": "S ≤ -25 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 초입 ➔ 1차 대응 존"},
-                {"구분": "🟡 2차 진입 구간", "조건": "S ≤ -30 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 진행 ➔ 2차 대응 존"},
-                {"구분": "🟡 3차 진입 구간", "조건": "S ≤ -35 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 심화 ➔ 3차 대응 존"},
+                {"구분": "🟡 1차 진입 구간", "조건": "S ≤ -25 + 선제적 필터 + 쿨다운", "비중": "3%", "행동 가이드": "하락 초입 ➔ 1차 대응 존 (하루 빠른 선취매)"},
+                {"구분": "🟡 2차 진입 구간", "조건": "S ≤ -30 + 선제적 필터 + 쿨다운", "비중": "3%", "행동 가이드": "하락 진행 ➔ 2차 대응 존"},
+                {"구분": "🟡 3차 진입 구간", "조건": "S ≤ -35 + 선제적 필터 + 쿨다운", "비중": "3%", "행동 가이드": "하락 심화 ➔ 3차 대응 존"},
                 {"구분": "🟠 4차 진입 구간", "조건": "S ≤ -42 + 거래량/지지 + 쿨다운", "비중": "7%", "행동 가이드": "공포 진입 ➔ 4차 대응 존"},
-                {"Group": "🟠 5차 진입 구간", "조건": "S ≤ -49 + 거래량/지지 + 쿨다운", "비중": "7%", "행동 가이드": "깊은 공포 ➔ 5차 대응 존"},
+                {"구분": "🟠 5차 진입 구간", "조건": "S ≤ -49 + 거래량/지지 + 쿨다운", "비중": "7%", "행동 가이드": "깊은 공포 ➔ 5차 대응 존"},
                 {"구분": "🔴 6차 진입 구간", "조건": "S ≤ -52 + 거래량/지지 + 쿨다운", "비중": "30%", "행동 가이드": "🔥 **[화력 집중]** 6차 대응 존"},
                 {"구분": "🔴 7차 바닥 진입 구간", "조건": "S ≤ -55 + 거래량/지지 + 쿨다운", "비중": "47% (잔여 전액)", "행동 가이드": "🚨 **[최후 승부수]** 바닥 진입 존"},
                 {"구분": "🔵 매도 추천", "조건": "S값 회복 구간", "비중": "현금화", "행동 가이드": "지표 회복 시 분할 매도 검토"},
