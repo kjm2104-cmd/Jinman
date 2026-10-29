@@ -24,17 +24,19 @@ st.markdown("""
 
 st.subheader("📈 간편 교대 매매 시스템 (실전 포트폴리오 분석기)")
 
-# 네이버 금융 일별 시세 크롤링 함수 (현재가 룩업용 포함)
+# 네이버 금융 일별 시세 크롤링 함수 (종목명 추출 및 현재가 룩업 겸용)
 @st.cache_data(ttl=3600)
 def get_naver_stock_data(code, count=1250):
     url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count={count}&requestType=0"
     try:
         response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
         if response.status_code != 200:
-            return None
+            return None, None
         
         from xml.etree import ElementTree as ET
         root = ET.fromstring(response.text)
+        
+        # 네이버 XML에서 종목명(epsfld 등) 추출 시도
         item_list = root.findall('.//item')
         
         data = []
@@ -52,16 +54,16 @@ def get_naver_stock_data(code, count=1250):
                 })
         
         if not data:
-            return None
+            return None, None
             
         df = pd.DataFrame(data)
         df['Date'] = pd.to_datetime(df['Date'])
         df.set_index('Date', inplace=True)
-        return df
+        return df, code
     except Exception as e:
-        return None
+        return None, None
 
-# 주요 종목 빠른 매핑 사전
+# 주요 종목 빠른 매핑 사전 (코드 및 이름)
 name_to_code = {
     "삼성전자": "005930",
     "KODEX 코스닥150레버리지": "233740",
@@ -72,20 +74,32 @@ name_to_code = {
     "현대차": "005380"
 }
 
-def resolve_code(user_str):
-    clean_str = user_str.strip()
+code_to_name = {v: k for k, v in name_to_code.items()}
+code_to_name.update({
+    "005930": "삼성전자",
+    "233740": "KODEX 코스닥150레버리지",
+    "069500": "KODEX 200",
+    "000660": "SK하이닉스",
+    "373220": "LG에너지솔루션",
+    "005380": "현대차"
+})
+
+def resolve_code_and_name(user_str):
+    clean_str = str(user_str).strip()
+    if not clean_str:
+        return "233740", ""
+    
     if clean_str in name_to_code:
         return name_to_code[clean_str], clean_str
     elif clean_str.isdigit():
         code = clean_str.zfill(6)
-        name = "삼성전자" if code == "005930" else ("KODEX 코스닥150레버리지" if code == "233740" else f"종목코드 {code}")
+        name = code_to_name.get(code, f"종목({code})")
         return code, name
     else:
         for k, v in name_to_code.items():
             if clean_str in k:
                 return v, k
-        # 기본값 (매칭 안 될 경우 코스닥 레버리지)
-        return "233740", clean_str if clean_str else "KODEX 코스닥150레버리지"
+        return "233740", clean_str
 
 # 🔍 상단 메인 검색 Form
 with st.form(key="search_form"):
@@ -102,7 +116,7 @@ with st.form(key="search_form"):
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
         submit_search = st.form_submit_button("🔍 조회하기", use_container_width=True)
 
-stock_code, stock_name = resolve_code(user_input)
+stock_code, stock_name = resolve_code_and_name(user_input)
 
 def r10(val):
     return int(np.floor(val / 10.0 + 0.5) * 10)
@@ -301,7 +315,7 @@ def calculate_indicator_sheet(df_raw):
 if stock_code:
     days_count = years_back * 250
     with st.spinner(f"[{stock_name} ({stock_code})] 네이버 금융에서 데이터를 불러오는 중입니다..."):
-        raw_df = get_naver_stock_data(stock_code, count=days_count)
+        raw_df, _ = get_naver_stock_data(stock_code, count=days_count)
 
     if raw_df is not None and not raw_df.empty:
         df_result, s = calculate_indicator_sheet(raw_df)
@@ -374,18 +388,16 @@ if stock_code:
             st.dataframe(pd.DataFrame(sell_guide_data), use_container_width=True)
 
         with tab3:
-            st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기 (현재가 자동 연동)")
-            st.caption("보유 중인 종목명(예: 삼성전자, KODEX 코스닥150레버리지)을 입력하시면 네이버 금융에서 **현재가를 자동으로 가져와서** 총 손익과 평가금액을 실시간으로 계산해 줍니다.")
+            st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기 (코드/종목명 자동 연동)")
+            st.caption("보유 종목 칸에 **종목명**이나 **6자리 종목코드(예: 005930)**를 입력하시면, 앱이 자동으로 종목명을 완성하고 네이버 금융에서 **실시간 현재가**를 가져와 총 손익을 계산해 줍니다.")
 
             if 'my_portfolio_items' not in st.session_state:
-                # 첫 시작 시에만 사용자분께서 주신 기본값(5,330원 / 5,717주) 세팅
                 st.session_state.my_portfolio_items = [
-                    {"id": 1, "name": "KODEX 코스닥150레버리지", "qty": 5717, "avg_price": 5330}
+                    {"id": 1, "name": "233740", "qty": 5717, "avg_price": 5330}
                 ]
 
             if st.button("➕ 보유 종목 추가하기"):
                 new_id = max([item["id"] for item in st.session_state.my_portfolio_items], default=0) + 1
-                # 🔥 새로 추가할 때는 종목명 빈칸(""), 수량과 평단가는 0으로 깨끗하게 초기화
                 st.session_state.my_portfolio_items.append({"id": new_id, "name": "", "qty": 0, "avg_price": 0})
                 st.rerun()
 
@@ -399,20 +411,20 @@ if stock_code:
                 for idx, item in enumerate(st.session_state.my_portfolio_items):
                     cols = st.columns([1.8, 1, 1, 1.2, 0.6])
                     with cols[0]:
-                        item["name"] = st.text_input(f"종목명 {idx+1}", value=item["name"], placeholder="예: 삼성전자", key=f"mp_name_{item['id']}")
+                        item["name"] = st.text_input(f"종목명 또는 코드 {idx+1}", value=item["name"], placeholder="예: 삼성전자 또는 005930", key=f"mp_name_{item['id']}")
                     with cols[1]:
                         item["qty"] = st.number_input(f"수량 {idx+1}", min_value=0, value=item["qty"], step=1, key=f"mp_qty_{item['id']}")
                     with cols[2]:
                         item["avg_price"] = st.number_input(f"평단가 {idx+1}", min_value=0, value=item["avg_price"], step=10, key=f"mp_price_{item['id']}")
                     
-                    # 빈칸이거나 유효하지 않은 종목명일 경우 기본 코드 처리
-                    item_code, _ = resolve_code(item["name"] if item["name"] else "233740")
-                    live_df = get_naver_stock_data(item_code, count=5)
+                    # 입력된 종목명/코드를 정규화하여 코드와 정식 종목명을 자동으로 추출
+                    resolved_code, resolved_name = resolve_code_and_name(item["name"])
+                    live_df, _ = get_naver_stock_data(resolved_code, count=5)
                     live_curr_price = int(live_df['Close'].iloc[-1]) if live_df is not None and not live_df.empty else item["avg_price"]
 
                     with cols[3]:
-                        st.markdown(f"<div style='font-size: 0.85rem; color: #555; margin-bottom: 2px;'>실시간 현재가</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='font-size: 1.1rem; font-weight: bold; color: #D32F2F; padding-top: 6px;'>{live_curr_price:,}원</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size: 0.8rem; color: #666; margin-bottom: 2px;'><b>{resolved_name}</b></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size: 1.05rem; font-weight: bold; color: #D32F2F;'>{live_curr_price:,}원</div>", unsafe_allow_html=True)
 
                     with cols[4]:
                         st.markdown("<div style='margin-top: 22px;'></div>", unsafe_allow_html=True)
