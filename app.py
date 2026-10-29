@@ -352,16 +352,6 @@ if stock_code:
                 {"단계": "4차 매수", "S값 조건": "S ≤ -18", "투입 비중": "15%", "설명": "중간 지점 비중 안정적 채우기"},
                 {"단계": "5차 매수", "S값 조건": "S ≤ -25", "투입 비중": "20%", "설명": "깊은 조정 구간 굵직하게 싣기"},
                 {"단계": "6차 매수", "S값 조건": "S ≤ -35", "투입 비중": "20%", "설명": "공포 확산 바닥권 대규모 담기"},
-                {"Digest": "7차 풀베팅", "S값 조건": "S ≤ -45", "투입 비중": "15%", "설명": "[최종 바닥] 분할 매수 한도 소진"},
-            ]
-            # 위 딕셔너리 키 오류 방지용 정돈
-            buy_guide_data = [
-                {"단계": "1차 매수", "S값 조건": "S ≤ -3", "투입 비중": "5%", "설명": "하락 초입 가볍게 입질"},
-                {"단계": "2차 매수", "S값 조건": "S ≤ -7", "투입 비중": "10%", "설명": "조정 시 추가 비중 확대"},
-                {"단계": "3차 매수", "S값 조건": "S ≤ -12", "투입 비중": "15%", "설명": "하락세 깊어질 때 물량 확보"},
-                {"단계": "4차 매수", "S값 조건": "S ≤ -18", "투입 비중": "15%", "설명": "중간 지점 비중 안정적 채우기"},
-                {"단계": "5차 매수", "S값 조건": "S ≤ -25", "투입 비중": "20%", "설명": "깊은 조정 구간 굵직하게 싣기"},
-                {"단계": "6차 매수", "S값 조건": "S ≤ -35", "투입 비중": "20%", "설명": "공포 확산 바닥권 대규모 담기"},
                 {"단계": "7차 풀베팅", "S값 조건": "S ≤ -45", "투입 비중": "15%", "설명": "[최종 바닥] 분할 매수 한도 소진"},
             ]
             st.dataframe(pd.DataFrame(buy_guide_data), use_container_width=True)
@@ -388,13 +378,15 @@ if stock_code:
             st.caption("보유 중인 종목명(예: 삼성전자, KODEX 코스닥150레버리지)을 입력하시면 네이버 금융에서 **현재가를 자동으로 가져와서** 총 손익과 평가금액을 실시간으로 계산해 줍니다.")
 
             if 'my_portfolio_items' not in st.session_state:
+                # 첫 시작 시에만 사용자분께서 주신 기본값(5,330원 / 5,717주) 세팅
                 st.session_state.my_portfolio_items = [
                     {"id": 1, "name": "KODEX 코스닥150레버리지", "qty": 5717, "avg_price": 5330}
                 ]
 
             if st.button("➕ 보유 종목 추가하기"):
                 new_id = max([item["id"] for item in st.session_state.my_portfolio_items], default=0) + 1
-                st.session_state.my_portfolio_items.append({"id": new_id, "name": "삼성전자", "qty": 10, "avg_price": 70000})
+                # 🔥 새로 추가할 때는 종목명 빈칸(""), 수량과 평단가는 0으로 깨끗하게 초기화
+                st.session_state.my_portfolio_items.append({"id": new_id, "name": "", "qty": 0, "avg_price": 0})
                 st.rerun()
 
             total_invested_all = 0
@@ -407,14 +399,14 @@ if stock_code:
                 for idx, item in enumerate(st.session_state.my_portfolio_items):
                     cols = st.columns([1.8, 1, 1, 1.2, 0.6])
                     with cols[0]:
-                        item["name"] = st.text_input(f"종목명 {idx+1}", value=item["name"], key=f"mp_name_{item['id']}")
+                        item["name"] = st.text_input(f"종목명 {idx+1}", value=item["name"], placeholder="예: 삼성전자", key=f"mp_name_{item['id']}")
                     with cols[1]:
                         item["qty"] = st.number_input(f"수량 {idx+1}", min_value=0, value=item["qty"], step=1, key=f"mp_qty_{item['id']}")
                     with cols[2]:
                         item["avg_price"] = st.number_input(f"평단가 {idx+1}", min_value=0, value=item["avg_price"], step=10, key=f"mp_price_{item['id']}")
                     
-                    # 종목명/코드를 기반으로 네이버 금융에서 실시간 현재가 자동 크롤링 연동
-                    item_code, _ = resolve_code(item["name"])
+                    # 빈칸이거나 유효하지 않은 종목명일 경우 기본 코드 처리
+                    item_code, _ = resolve_code(item["name"] if item["name"] else "233740")
                     live_df = get_naver_stock_data(item_code, count=5)
                     live_curr_price = int(live_df['Close'].iloc[-1]) if live_df is not None and not live_df.empty else item["avg_price"]
 
