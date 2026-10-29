@@ -23,7 +23,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (실시간 단계별 목표가 자동 안내)")
+st.subheader("📈 간편 교대 매매 시스템 (4~7차 핵심 구간 집중)")
 
 # 네이버 금융 일별 시세 크롤링 함수 (개별 종목 및 지수 공용)
 @st.cache_data(ttl=3600)
@@ -330,48 +330,47 @@ if stock_code:
         current_s_val = s['S']
         cur_sig = s['current_signal']
         
-        # 🔥 실시간 단계별 도달 목표가 계산 (마지막 날 기준 max_mn, min_pq 활용)
+        # 🔥 실시간 단계별 도달 목표가 계산 (4~7차 핵심 구간만 집중 추출)
         max_mn_val = s.get('max_mn', 0)
         min_pq_val = s.get('min_pq', 0)
         
-        stages_info = [
-            (1, -25, "1차"), (2, -30, "2차"), (3, -35, "3차"),
+        stages_info_core = [
             (4, -42, "4차"), (5, -49, "5차"), (6, -52, "6차"), (7, -55, "7차(바닥)")
         ]
         
         target_prices_html = []
         if max_mn_val > 0 and min_pq_val > 0:
-            for stg, s_tgt, name in stages_info:
+            for stg, s_tgt, name in stages_info_core:
                 tp = r10(max_mn_val + (s_tgt * min_pq_val) / 100.0)
                 target_prices_html.append(f"<b>{name}</b>: <span style='color:#D32F2F;'>{tp:,}원 이하</span> (S≤{s_tgt})")
 
         if "진입 구간" in cur_sig:
-            action_title = f"🔴 [{cur_sig}] ➔ S값 조건 도달 당일 즉발 진입 구간입니다!"
-            action_desc = "지연 없이 S값 조건에 도달한 당일 곧바로 포착되었습니다. 원칙에 따라 대응하세요."
+            action_title = f"🔴 [{cur_sig}] ➔ 즉발 진입 구간 도달!"
+            action_desc = "S값 조건에 도달한 당일 곧바로 포착되었습니다."
             badge_color = "#D32F2F"
         elif cur_sig == "매도 추천":
-            action_title = f"🔵 [{cur_sig}] ➔ 지표가 회복되었습니다! 수익 실현을 검토하세요"
-            action_desc = "S값이 안전지대로 회복되었습니다. 원칙에 따라 분할 매도를 고려해 보세요."
+            action_title = f"🔵 [{cur_sig}] ➔ 지표 회복! 수익 실현 검토"
+            action_desc = "S값이 안전지대로 회복되었습니다."
             badge_color = "#1976D2"
         else:
-            action_title = f"🟢 [관망] ➔ -25% 안전 구간입니다"
-            action_desc = "어설픈 하락이나 요동(휩쏘) 장세에서는 매수를 자제하고 현금 100%를 유지하세요."
+            action_title = f"🟢 [관망] ➔ 안전 구간"
+            action_desc = "현금 100%를 유지하며 기회를 기다립니다."
             badge_color = "#2E7D32"
 
         st.markdown(f"""
-        <div style="background-color: #F8F9FA; border-left: 6px solid {badge_color}; padding: 16px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-            <h3 style="margin: 0; color: {badge_color}; font-size: 1.15rem;">{action_title}</h3>
-            <p style="margin: 8px 0 0 0; color: #222222; font-size: 0.95rem; line-height: 1.4;">
-                <b>S값: <code>{current_s_val}</code> (고점대비 PM: {s['PM']}%)</b> | 💡 {action_desc}
+        <div style="background-color: #F8F9FA; border-left: 6px solid {badge_color}; padding: 14px; border-radius: 8px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            <h3 style="margin: 0; color: {badge_color}; font-size: 1.1rem;">{action_title}</h3>
+            <p style="margin: 6px 0 0 0; color: #222222; font-size: 0.9rem;">
+                <b>S값: <code>{current_s_val}</code> (PM: {s['PM']}%)</b> | {action_desc}
             </p>
         </div>
         """, unsafe_allow_html=True)
 
-        # 🔥 실시간 지정가 세팅 가이드 박스 추가
+        # 🔥 4~7차 핵심 지정가 세팅 가이드 박스
         if target_prices_html:
             st.markdown(f"""
-            <div style="background-color: #FFF3E0; border: 1px solid #FFB74D; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 0.88rem; color: #333; line-height: 1.5;">
-                <b>🎯 [실전 지정가 세팅 가이드] 다음 영업일 S값 단계별 도달 목표가</b><br>
+            <div style="background-color: #FFF3E0; border: 1px solid #FFB74D; padding: 10px; border-radius: 8px; margin-bottom: 12px; font-size: 0.85rem; color: #333; line-height: 1.4;">
+                <b>🎯 [4~7차 핵심 지정가 세팅 가이드] 다음 영업일 주요 도달 목표가</b><br>
                 {' | '.join(target_prices_html)}
             </div>
             """, unsafe_allow_html=True)
@@ -379,40 +378,37 @@ if stock_code:
         c1, c2, c3, c4 = st.columns(4)
         c1.metric(f"{stock_name} 현재가", f"{s['B1']:,}원", f"{s['cur_chg']:+.2f}%")
         c2.metric("S값 / 낙폭(PM)", f"S: {s['S']}", f"PM: {s['PM']}%")
-        c3.metric("코스피(KOSPI) 지수", f"{kospi_val:,}", f"{kospi_chg:+.2f}%")
-        c4.metric("코스닥(KOSDAQ) 지수", f"{kosdaq_val:,}", f"{kosdaq_chg:+.2f}%")
+        c3.metric("코스피 지수", f"{kospi_val:,}", f"{kospi_chg:+.2f}%")
+        c4.metric("코스닥 지수", f"{kosdaq_val:,}", f"{kosdaq_chg:+.2f}%")
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 7단계 가이드 & 자동금액 계산기", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 4~7차 핵심 가이드 & 자동금액", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 실시간 S값 단계별 도달 목표가와 당일 즉발 진입 구간이 연동된 실전 마스터 표입니다.")
+            st.caption("📈 S값 조건 도달 당일 즉발 신호가 발동되는 실전 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
         with tab2:
-            st.markdown("##### 🎯 [새로운 7단계 매매 가이드 & 총 자산별 구간별 투입 금액 자동 계산기]")
+            st.markdown("##### 🎯 [4~7차 핵심 매수 구간 & 자동금액 계산기]")
             total_seed = st.number_input("💰 총 투자 예정 금액 (원)", min_value=100000, max_value=10000000000, value=30000000, step=1000000, format="%d")
 
-            guide_rows = [
-                {"단계": "🟢 관망", "조건": "S ≥ -20", "비중": 0.0, "행동 가이드": "안전 구간 ➔ 현금 100% 사수"},
-                {"단계": "🟡 1차 진입 구간", "조건": "S ≤ -25 (당일 즉발)", "비중": 0.03, "행동 가이드": "하락 초입 ➔ 1차 입질 매수"},
-                {"단계": "🟡 2차 진입 구간", "조건": "S ≤ -30 (당일 즉발)", "비중": 0.03, "행동 가이드": "하락 진행 ➔ 2차 입질 매수"},
-                {"단계": "🟡 3차 진입 구간", "조건": "S ≤ -35 (당일 즉발)", "비중": 0.03, "행동 가이드": "하락 심화 ➔ 3차 입질 매수"},
-                {"단계": "🟠 4차 진입 구간", "조건": "S ≤ -42 (당일 즉발)", "비중": 0.07, "행동 가이드": "공포 진입 ➔ 4차 비중 확대 매수"},
-                {"단계": "🟠 5차 진입 구간", "조건": "S ≤ -49 (당일 즉발)", "비중": 0.07, "행동 가이드": "깊은 공포 ➔ 5차 추가 비중 매수"},
-                {"단계": "🔴 6차 진입 구간", "조건": "S ≤ -52 (당일 즉발)", "비중": 0.30, "행동 가이드": "🔥 **[화력 집중]** 6차 대규모 물량 매수"},
-                {"단계": "🔴 7차 바닥 진입 구간", "조건": "S ≤ -55 (당일 즉발)", "비중": 0.47, "행동 가이드": "🚨 **[최후 승부수]** 잔여 전액 강력매수"},
+            # 4~7차 핵심 구간만 집중 압축
+            core_rows = [
+                {"단계": "🟠 4차 진입 구간", "조건": "S ≤ -42", "비중": 0.07, "가이드": "공포 진입 ➔ 7% 비중 확대"},
+                {"단계": "🟠 5차 진입 구간", "조건": "S ≤ -49", "비중": 0.07, "가이드": "깊은 공포 ➔ 7% 추가 비중"},
+                {"단계": "🔴 6차 진입 구간", "조건": "S ≤ -52", "비중": 0.30, "가이드": "🔥 **[화력 집중]** 30% 대규모 물량"},
+                {"단계": "🔴 7차 바닥 진입 구간", "조건": "S ≤ -55", "비중": 0.47, "가이드": "🚨 **[최후 승부수]** 잔여 전액 올인"},
             ]
 
             calc_data = []
-            for row in guide_rows:
+            for row in core_rows:
                 amt = int(total_seed * row["비중"])
                 calc_data.append({
                     "매수 단계": row["단계"],
                     "S값 조건": row["조건"],
                     "투입 비중": f"{int(row['비중']*100)}%",
                     "자동 계산 투입금액": f"{amt:,}원",
-                    "행동 가이드": row["행동 가이드"]
+                    "행동 가이드": row["가이드"]
                 })
 
             st.dataframe(pd.DataFrame(calc_data), use_container_width=True)
