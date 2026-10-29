@@ -24,7 +24,7 @@ st.markdown("""
 
 st.subheader("📈 간편 교대 매매 시스템 (실전 포트폴리오 분석기)")
 
-# 네이버 금융 일별 시세 크롤링 함수
+# 네이버 금융 일별 시세 크롤링 함수 (현재가 룩업용 포함)
 @st.cache_data(ttl=3600)
 def get_naver_stock_data(code, count=1250):
     url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count={count}&requestType=0"
@@ -72,12 +72,27 @@ name_to_code = {
     "현대차": "005380"
 }
 
-# 🔍 검색 Form
+def resolve_code(user_str):
+    clean_str = user_str.strip()
+    if clean_str in name_to_code:
+        return name_to_code[clean_str], clean_str
+    elif clean_str.isdigit():
+        code = clean_str.zfill(6)
+        name = "삼성전자" if code == "005930" else ("KODEX 코스닥150레버리지" if code == "233740" else f"종목코드 {code}")
+        return code, name
+    else:
+        for k, v in name_to_code.items():
+            if clean_str in k:
+                return v, k
+        # 기본값 (매칭 안 될 경우 코스닥 레버리지)
+        return "233740", clean_str if clean_str else "KODEX 코스닥150레버리지"
+
+# 🔍 상단 메인 검색 Form
 with st.form(key="search_form"):
     col_in1, col_in2, col_in3 = st.columns([2, 1, 1])
     with col_in1:
         user_input = st.text_input(
-            "🔍 조회할 종목 또는 종목코드 입력",
+            "🔍 조회할 메인 종목 또는 종목코드 입력",
             value="233740",
             placeholder="예: 삼성전자 또는 005930"
         ).strip()
@@ -87,24 +102,7 @@ with st.form(key="search_form"):
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
         submit_search = st.form_submit_button("🔍 조회하기", use_container_width=True)
 
-# 입력값 파싱
-if user_input in name_to_code:
-    stock_code = name_to_code[user_input]
-    stock_name = user_input
-elif user_input.isdigit():
-    stock_code = user_input.zfill(6)
-    stock_name = "삼성전자" if stock_code == "005930" else ("KODEX 코스닥150레버리지" if stock_code == "233740" else f"종목코드 {stock_code}")
-else:
-    found = False
-    for k, v in name_to_code.items():
-        if user_input in k:
-            stock_code = v
-            stock_name = k
-            found = True
-            break
-    if not found:
-        stock_code = "233740"
-        stock_name = "KODEX 코스닥150레버리지"
+stock_code, stock_name = resolve_code(user_input)
 
 def r10(val):
     return int(np.floor(val / 10.0 + 0.5) * 10)
@@ -354,6 +352,16 @@ if stock_code:
                 {"단계": "4차 매수", "S값 조건": "S ≤ -18", "투입 비중": "15%", "설명": "중간 지점 비중 안정적 채우기"},
                 {"단계": "5차 매수", "S값 조건": "S ≤ -25", "투입 비중": "20%", "설명": "깊은 조정 구간 굵직하게 싣기"},
                 {"단계": "6차 매수", "S값 조건": "S ≤ -35", "투입 비중": "20%", "설명": "공포 확산 바닥권 대규모 담기"},
+                {"Digest": "7차 풀베팅", "S값 조건": "S ≤ -45", "투입 비중": "15%", "설명": "[최종 바닥] 분할 매수 한도 소진"},
+            ]
+            # 위 딕셔너리 키 오류 방지용 정돈
+            buy_guide_data = [
+                {"단계": "1차 매수", "S값 조건": "S ≤ -3", "투입 비중": "5%", "설명": "하락 초입 가볍게 입질"},
+                {"단계": "2차 매수", "S값 조건": "S ≤ -7", "투입 비중": "10%", "설명": "조정 시 추가 비중 확대"},
+                {"단계": "3차 매수", "S값 조건": "S ≤ -12", "투입 비중": "15%", "설명": "하락세 깊어질 때 물량 확보"},
+                {"단계": "4차 매수", "S값 조건": "S ≤ -18", "투입 비중": "15%", "설명": "중간 지점 비중 안정적 채우기"},
+                {"단계": "5차 매수", "S값 조건": "S ≤ -25", "투입 비중": "20%", "설명": "깊은 조정 구간 굵직하게 싣기"},
+                {"단계": "6차 매수", "S값 조건": "S ≤ -35", "투입 비중": "20%", "설명": "공포 확산 바닥권 대규모 담기"},
                 {"단계": "7차 풀베팅", "S값 조건": "S ≤ -45", "투입 비중": "15%", "설명": "[최종 바닥] 분할 매수 한도 소진"},
             ]
             st.dataframe(pd.DataFrame(buy_guide_data), use_container_width=True)
@@ -376,18 +384,17 @@ if stock_code:
             st.dataframe(pd.DataFrame(sell_guide_data), use_container_width=True)
 
         with tab3:
-            st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기")
-            st.caption("보유 중인 종목을 자유롭게 추가·삭제하고 평단가와 수량을 입력하시면, 모든 종목의 최종 합계와 총 손익이 실시간으로 계산됩니다.")
+            st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기 (현재가 자동 연동)")
+            st.caption("보유 중인 종목명(예: 삼성전자, KODEX 코스닥150레버리지)을 입력하시면 네이버 금융에서 **현재가를 자동으로 가져와서** 총 손익과 평가금액을 실시간으로 계산해 줍니다.")
 
-            # 세션 상태에 포트폴리오 리스트 초기화 (사용자 최근 입력값인 5,330원 / 5,717주 기본 세팅)
             if 'my_portfolio_items' not in st.session_state:
                 st.session_state.my_portfolio_items = [
-                    {"id": 1, "name": f"{stock_name} ({stock_code})", "qty": 5717, "avg_price": 5330, "curr_price": int(s['B1'])}
+                    {"id": 1, "name": "KODEX 코스닥150레버리지", "qty": 5717, "avg_price": 5330}
                 ]
 
             if st.button("➕ 보유 종목 추가하기"):
                 new_id = max([item["id"] for item in st.session_state.my_portfolio_items], default=0) + 1
-                st.session_state.my_portfolio_items.append({"id": new_id, "name": f"신규종목{new_id}", "qty": 100, "avg_price": 10000, "curr_price": int(s['B1'])})
+                st.session_state.my_portfolio_items.append({"id": new_id, "name": "삼성전자", "qty": 10, "avg_price": 70000})
                 st.rerun()
 
             total_invested_all = 0
@@ -398,23 +405,30 @@ if stock_code:
                 st.info("등록된 보유 종목이 없습니다. [➕ 보유 종목 추가하기] 버튼을 눌러 종목을 추가해 주세요.")
             else:
                 for idx, item in enumerate(st.session_state.my_portfolio_items):
-                    cols = st.columns([1.8, 1, 1, 1, 0.6])
+                    cols = st.columns([1.8, 1, 1, 1.2, 0.6])
                     with cols[0]:
                         item["name"] = st.text_input(f"종목명 {idx+1}", value=item["name"], key=f"mp_name_{item['id']}")
                     with cols[1]:
-                        item["qty"] = st.number_input(f"수량 (주) {idx+1}", min_value=0, value=item["qty"], step=1, key=f"mp_qty_{item['id']}")
+                        item["qty"] = st.number_input(f"수량 {idx+1}", min_value=0, value=item["qty"], step=1, key=f"mp_qty_{item['id']}")
                     with cols[2]:
-                        item["avg_price"] = st.number_input(f"평단가 (원) {idx+1}", min_value=0, value=item["avg_price"], step=10, key=f"mp_price_{item['id']}")
+                        item["avg_price"] = st.number_input(f"평단가 {idx+1}", min_value=0, value=item["avg_price"], step=10, key=f"mp_price_{item['id']}")
+                    
+                    # 종목명/코드를 기반으로 네이버 금융에서 실시간 현재가 자동 크롤링 연동
+                    item_code, _ = resolve_code(item["name"])
+                    live_df = get_naver_stock_data(item_code, count=5)
+                    live_curr_price = int(live_df['Close'].iloc[-1]) if live_df is not None and not live_df.empty else item["avg_price"]
+
                     with cols[3]:
-                        # 현재가는 상단 조회 종목(B1) 기준으로 자동 반영 또는 개별 입력 가능하게 구성
-                        item["curr_price"] = st.number_input(f"현재가 (원) {idx+1}", min_value=0, value=int(s['B1']) if stock_code in item["name"] else item["avg_price"], step=10, key=f"mp_curr_{item['id']}")
+                        st.markdown(f"<div style='font-size: 0.85rem; color: #555; margin-bottom: 2px;'>실시간 현재가</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size: 1.1rem; font-weight: bold; color: #D32F2F; padding-top: 6px;'>{live_curr_price:,}원</div>", unsafe_allow_html=True)
+
                     with cols[4]:
-                        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                        st.markdown("<div style='margin-top: 22px;'></div>", unsafe_allow_html=True)
                         if st.button("❌ 삭제", key=f"del_mp_{item['id']}"):
                             items_to_delete.append(item)
 
                     inv_amt = item["qty"] * item["avg_price"]
-                    eval_amt = item["qty"] * item["curr_price"]
+                    eval_amt = item["qty"] * live_curr_price
                     total_invested_all += inv_amt
                     total_eval_all += eval_amt
 
@@ -434,7 +448,6 @@ if stock_code:
             fc2.metric("전체 총 평가금액", f"{total_eval_all:,}원", f"{total_pl_rate:+.2f}%")
             fc3.metric("전체 총 평가 손익", f"{total_pl:,}원", f"{'수익' if total_pl >= 0 else '손실'}")
 
-            # 포트폴리오 코멘트
             st.markdown("---")
             if total_pl_rate <= -10:
                 st.warning(f"📉 전체 포트폴리오 종합 수익률이 **{total_pl_rate:.2f}%**입니다. S값 하락 모드와 7단계 매수 플랜에 따라 냉정하게 자금을 관리하세요.")
