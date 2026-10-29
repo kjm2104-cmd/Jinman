@@ -23,7 +23,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 ([매수 추천]·[매도 추천] 전용)")
+st.subheader("📈 간편 교대 매매 시스템 ([진입 구간] 표준화 버전)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -189,7 +189,7 @@ def style_table(df_target, df_full):
 
             elif col_name == '매수신호':
                 val_str = str(val)
-                if '매수 추천' in val_str:
+                if '진입 구간' in val_str:
                     styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
                 elif val_str == '대기':
                     styles[idx] = 'background-color: #FFF3E0; color: #E65100; font-weight: 900; border: 1px solid #FFB74D; white-space: nowrap;'
@@ -231,6 +231,7 @@ def calculate_indicator_sheet(df_raw):
     up_phase = 'M'; down_phase = 'Q'
     M8, N8, P8, Q8 = peak, peak, peak, peak
 
+    stage_weights = {1: 0.03, 2: 0.03, 3: 0.03, 4: 0.07, 5: 0.07, 6: 0.30, 7: 0.47}
     last_buy_index = -99
 
     for i in range(n):
@@ -292,9 +293,9 @@ def calculate_indicator_sheet(df_raw):
                 if is_trigger_ready and is_cooldown_passed:
                     last_buy_index = i
                     if target_stage == 7:
-                        sig = "7차 강력매수 추천"
+                        sig = "7차 바닥 진입 구간"
                     else:
-                        sig = f"{target_stage}차 매수 추천"
+                        sig = f"{target_stage}차 진입 구간"
                 else:
                     sig = "대기"
             else:
@@ -341,13 +342,13 @@ if stock_code:
         current_s_val = s['S']
         cur_sig = s['current_signal']
         
-        if "매수 추천" in cur_sig:
-            action_title = f"🔴 [{cur_sig}] ➔ 거래량 유입 및 지지 확인 완료! 오늘 매수를 진행하세요"
-            action_desc = "하락 진정세와 함께 거래량이 유입되었습니다. 정해진 비중만큼 과감하게 매수를 진행하세요!"
+        if "진입 구간" in cur_sig:
+            action_title = f"🔴 [{cur_sig}] ➔ 거래량 유입 및 지지 확인 완료! 대응을 준비하세요"
+            action_desc = "하락 진정세와 함께 거래량이 유입되며 해당 진입 구간에 도달했습니다."
             badge_color = "#D32F2F"
         elif cur_sig == "대기":
             action_title = f"🟠 [대기] ➔ 거래량 유입 및 하락 진정을 기다리는 중입니다"
-            action_desc = "S값 조건은 도달했으나 쿨다운(간격) 대기 중이거나 거래량이 부족하므로 매수를 보류하세요."
+            action_desc = "S값 조건은 도달했으나 쿨다운(간격) 대기 중이거나 거래량이 부족하므로 관망하세요."
             badge_color = "#E65100"
         elif cur_sig == "매도 추천":
             action_title = f"🔵 [{cur_sig}] ➔ 지표가 회복되었습니다! 수익 실현을 검토하세요"
@@ -376,7 +377,7 @@ if stock_code:
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 새로운 7단계 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 [X차 매수 추천], [매도 추천], [관망], [대기] 전용으로 깔끔하게 정돈된 마스터 표입니다.")
+            st.caption("📈 [X차 진입 구간], [매도 추천]으로 객관적 위치 안내가 적용된 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
@@ -384,13 +385,13 @@ if stock_code:
             st.markdown("##### 🎯 [새로운 7단계 맞춤형 매매 가이드]")
             guide_data = [
                 {"구분": "🟢 관망", "조건": "S ≥ -20 ( ~ -25)", "비중": "0%", "행동 가이드": "안전 구간 ➔ 현금 100% 사수 (매수 없음)"},
-                {"구분": "🟡 1차 매수 추천", "조건": "S ≤ -25 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 초입 ➔ 1차 입질 매수"},
-                {"구분": "🟡 2차 매수 추천", "조건": "S ≤ -30 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 진행 ➔ 2차 입질 매수"},
-                {"구분": "🟡 3차 매수 추천", "조건": "S ≤ -35 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 심화 ➔ 3차 입질 매수"},
-                {"구분": "🟠 4차 매수 추천", "조건": "S ≤ -42 + 거래량/지지 + 쿨다운", "비중": "7%", "행동 가이드": "공포 진입 ➔ 4차 비중 확대 매수"},
-                {"구분": "🟠 5차 매수 추천", "조건": "S ≤ -49 + 거래량/지지 + 쿨다운", "비중": "7%", "행동 가이드": "깊은 공포 ➔ 5차 추가 비중 매수"},
-                {"구분": "🔴 6차 매수 추천", "조건": "S ≤ -52 + 거래량/지지 + 쿨다운", "비중": "30%", "행동 가이드": "🔥 **[화력 집중]** 6차 대규모 물량 매수"},
-                {"구분": "🔴 7차 강력매수 추천", "조건": "S ≤ -55 + 거래량/지지 + 쿨다운", "비중": "47% (잔여 전액)", "행동 가이드": "🚨 **[최후 승부수]** 7차 올인 강력매수"},
+                {"구분": "🟡 1차 진입 구간", "조건": "S ≤ -25 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 초입 ➔ 1차 대응 존"},
+                {"구분": "🟡 2차 진입 구간", "조건": "S ≤ -30 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 진행 ➔ 2차 대응 존"},
+                {"구분": "🟡 3차 진입 구간", "조건": "S ≤ -35 + 거래량/지지 + 쿨다운", "비중": "3%", "행동 가이드": "하락 심화 ➔ 3차 대응 존"},
+                {"구분": "🟠 4차 진입 구간", "조건": "S ≤ -42 + 거래량/지지 + 쿨다운", "비중": "7%", "행동 가이드": "공포 진입 ➔ 4차 대응 존"},
+                {"Group": "🟠 5차 진입 구간", "조건": "S ≤ -49 + 거래량/지지 + 쿨다운", "비중": "7%", "행동 가이드": "깊은 공포 ➔ 5차 대응 존"},
+                {"구분": "🔴 6차 진입 구간", "조건": "S ≤ -52 + 거래량/지지 + 쿨다운", "비중": "30%", "행동 가이드": "🔥 **[화력 집중]** 6차 대응 존"},
+                {"구분": "🔴 7차 바닥 진입 구간", "조건": "S ≤ -55 + 거래량/지지 + 쿨다운", "비중": "47% (잔여 전액)", "행동 가이드": "🚨 **[최후 승부수]** 바닥 진입 존"},
                 {"구분": "🔵 매도 추천", "조건": "S값 회복 구간", "비중": "현금화", "행동 가이드": "지표 회복 시 분할 매도 검토"},
             ]
             st.dataframe(pd.DataFrame(guide_data), use_container_width=True)
