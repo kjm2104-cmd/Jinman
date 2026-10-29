@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (휩쏘 방어형 10단계 분석기)")
+st.subheader("📈 간편 교대 매매 시스템 (직관적 10단계 시그널 대시보드)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -144,12 +144,12 @@ def style_table(df_target, df_full):
                     pass
             elif col_name == '매수신호(레버리지/인버스)':
                 val_str = str(val)
-                if '10차' in val_str or '9차' in val_str or '최종익절' in val_str: 
+                if '10차' in val_str or '9차' in val_str: 
                     styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
-                elif '매수' in val_str: 
-                    styles[idx] = 'background-color: #D32F2F; color: #FFFFFF; font-weight: bold;'
+                elif '매수' in val_str or '입질' in val_str: 
+                    styles[idx] = 'background-color: #FF8F00; color: #FFFFFF; font-weight: bold;'
                 elif '익절' in val_str: 
-                    styles[idx] = 'background-color: #E3F2FD; color: #0D47A1; font-weight: bold;'
+                    styles[idx] = 'background-color: #1976D2; color: #FFFFFF; font-weight: bold;'
             elif col_name in cols_grad:
                 try:
                     v = float(val)
@@ -214,44 +214,44 @@ def calculate_indicator_sheet(df_raw):
         lm = int(round((p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
         s_val = lm - mm
 
-        # 🔥 10단계 매수 플랜 (-60 대응 & 1~5차 관망)
+        # 🔥 직관적인 10단계 시그널 명칭 부여
         if s_val <= -60:
-            sig = "🔥 10차 풀베팅 (누적 100% / -60 바닥)"
+            sig = "🔴 [10차] 풀베팅 (바닥 -60% / 현금소진)"
             invest_pct = "레버리지 100%"
             cash_pct = "현금 소진"
             invest_ratio = 1.0
         elif s_val <= -45:
-            sig = "🚨 9차 대규모 투하 (누적 49%)"
+            sig = "🔴 [9차] 대규모 투하 (비중 25%)"
             invest_pct = "레버리지 49%"
             cash_pct = "현금 관리"
             invest_ratio = 0.49
         elif s_val <= -35:
-            sig = "⚠️ 8차 입질 (누적 9%)"
+            sig = "🟡 [8차] 가벼운 입질 (3%)"
             invest_pct = "레버리지 9%"
             cash_pct = "현금 관리"
             invest_ratio = 0.09
         elif s_val <= -30:
-            sig = "⚠️ 7차 입질 (누적 6%)"
+            sig = "🟡 [7차] 가벼운 입질 (3%)"
             invest_pct = "레버리지 6%"
             cash_pct = "현금 관리"
             invest_ratio = 0.06
         elif s_val <= -25:
-            sig = "🔍 6차 입질 (누적 3%)"
+            sig = "🟡 [6차] 첫 번째 입질 (3%)"
             invest_pct = "레버리지 3%"
             cash_pct = "현금 관리"
             invest_ratio = 0.03
         elif s_val <= -20:
-            sig = "🛡️ 1~5차 구간 (철저한 관망)"
+            sig = "🟢 [1~5차] 철저한 관망 (0%)"
             invest_pct = "레버리지 0% (관망)"
             cash_pct = "현금 100% 사수"
             invest_ratio = 0.0
         elif s_val >= 0:
-            sig = "🔥 최종 익절 (전량 현금화 완료)"
+            sig = "🔵 [익절] 전량 현금화 완료"
             invest_pct = "레버리지 0%"
             cash_pct = "현금 100%"
             invest_ratio = 0.0
         else:
-            sig = "⚖️ 1~5차 구간 (관망 대기)"
+            sig = "🟢 [1~5차] 관망 대기 (0%)"
             invest_pct = "기존 비중 유지"
             cash_pct = "현금 100% 사수"
             invest_ratio = 0.0
@@ -295,25 +295,31 @@ if stock_code:
         df_result, s = calculate_indicator_sheet(raw_df)
 
         current_s_val = s['S']
-        if current_s_val <= -25:
-            action_title = "📉 [하락장 10단계 매수 모드]"
-            action_desc = f"현재 S값({current_s_val})이 하락 구간입니다. 휩쏘(노이즈)에 흔들리지 말고 2일 연속 마감 조건 및 거래량을 확인하며 대응하세요."
-            badge_color = "#D32F2F"
-        elif current_s_val >= -20:
-            action_title = "🛡️ [1~5차 철저한 관망 모드]"
-            action_desc = f"현재 S값({current_s_val})이 얕은 조정 구간입니다. 널뛰기 장세에 속지 말고 현금을 100% 사수하세요."
-            badge_color = "#2E7D32"
+        
+        # 🔥 한눈에 띄는 직관적 신호등 상태 배너 디자인
+        if current_s_val <= -45:
+            action_title = "🚨 [긴급] 9~10차 대규모 투하 / 풀베팅 구간!"
+            action_desc = "시장 패닉 공포 구간입니다. 거래량 폭증 및 하락 둔화(아래꼬리)를 확인하고 비중을 크게 실어주세요!"
+            badge_color = "#D32F2F" # Red
+        elif current_s_val <= -25:
+            action_title = "⚠️ [주의] 6~8차 가벼운 입질(각 3%) 구간"
+            action_desc = "하락세가 깊어지고 있습니다. 2일 연속 마감 조건을 확인하며 3%씩 가볍게 낚싯대를 던지세요."
+            badge_color = "#FF8F00" # Orange
+        elif current_s_val >= -20 and current_s_val < 0:
+            action_title = "🟢 [안전] 1~5차 철저한 관망 구간"
+            action_desc = "얕은 조정이나 휩쏘(요동) 장세입니다. 절대 사지 말고 현금 100%를 굳건히 지키세요!"
+            badge_color = "#2E7D32" # Green
         else:
-            action_title = "📈 [상승장 익절 모드]"
-            action_desc = f"현재 S값({current_s_val})이 회복 구간입니다. 분할 익절 원칙에 따라 현금화를 실행하세요."
-            badge_color = "#1976D2"
+            action_title = "📈 [상승] 익절 및 현금화 구간"
+            action_desc = "마이너스 회복 구간입니다. 분할 익절 원칙에 따라 이익을 실현하고 현금을 챙기세요."
+            badge_color = "#1976D2" # Blue
 
         st.markdown(f"""
-        <div style="background-color: #F8F9FA; border-left: 5px solid {badge_color}; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
-            <h4 style="margin: 0; color: {badge_color};">{action_title} ➔ <b>{s['current_signal']}</b></h4>
-            <p style="margin: 8px 0 0 0; color: #333333; font-size: 0.95rem;">
-                <b>[실전 가이드]</b> {action_desc}<br>
-                추천 포트폴리오 비중 ➔ <b>{s['invest_pct']}</b> ({s['cash_pct']})
+        <div style="background-color: #F8F9FA; border-left: 6px solid {badge_color}; padding: 18px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            <h3 style="margin: 0; color: {badge_color}; font-size: 1.2rem;">{action_title}</h3>
+            <p style="margin: 10px 0 0 0; color: #222222; font-size: 1.0rem; line-height: 1.4;">
+                <b>현재 S값: <code>S = {current_s_val}</code></b> | 현재 신호 ➔ <b>{s['current_signal']}</b><br>
+                💡 <b>[오늘의 행동 지침]</b> {action_desc}
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -324,28 +330,28 @@ if stock_code:
         c3.metric("기준 지표 상태", s['state'])
         c4.metric("추천 현금 비중", s['cash_pct'])
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 휩쏘 방어형 가이드", "💼 실전 보유 포트폴리오 계산기", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 한눈에 보는 매매 가이드", "💼 실전 보유 포트폴리오 계산기", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 S값 기준 [-60 확장형 10단계 매수] 및 휩쏘 방어 원칙이 통합 반영된 마스터 표입니다.")
+            st.caption("📈 S값 기준 10단계 매수신호등 시스템이 색상과 함께 마스터 표에 반영되어 있습니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
         with tab2:
-            st.markdown("##### 🛡️ S값 요동(휩쏘) 방어 및 10단계 매수 마스터 플랜")
+            st.markdown("##### 🚦 신호등 체계로 보는 10단계 실전 매수 마스터 플랜")
             buy_guide_data = [
-                {"단계": "1~5차 매수", "S값 조건": "S ≥ -20", "투입 비중": "0% (관망)", "설명": "노이즈/Whipsaw 구간에서는 절대 매수 금지 (현금 100% 사수)"},
-                {"단계": "6차 매수", "S값 조건": "S ≤ -25", "투입 비중": "3%", "설명": "2일 연속 마감 확인 후 첫 번째 가벼운 입질"},
-                {"단계": "7차 매수", "S값 조건": "S ≤ -30", "투입 비중": "3%", "설명": "공포가 누적될 때 두 번째 입질"},
-                {"단계": "8차 매수", "S값 조건": "S ≤ -35", "투입 비중": "3%", "설명": "하락 밴드 깊어지는 구간 마지막 가벼운 입질"},
-                {"단계": "9차 매수", "S값 조건": "S ≤ -45", "투입 비중": "25%", "설명": "[1차 투하] 거래량 폭증 + 하락 둔화 시 25% 투입"},
-                {"단계": "10차 풀베팅", "S값 조건": "S ≤ -60", "투입 비중": "66%", "설명": "[최종 방어] -60 패닉 공포 구간 모든 현금 소진"},
+                {"신호등 색상": "🟢 초록불 (관망)", "단계": "1~5차 매수", "S값 조건": "S ≥ -20", "투입 비중": "0% (대기)", "행동 지침": "얕은 조정·요동 장세 무시 / 현금 100% 사수"},
+                {"신호등 색상": "🟡 노란불 (입질)", "단계": "6차 매수", "S값 조건": "S ≤ -25", "투입 비중": "3%", "행동 지침": "2일 연속 마감 확인 후 첫 번째 가벼운 입질"},
+                {"신호등 색상": "🟡 노란불 (입질)", "단계": "7차 매수", "S값 조건": "S ≤ -30", "투입 비중": "3%", "행동 지침": "공포가 누적될 때 두 번째 입질"},
+                {"신호등 색상": "🟡 노란불 (입질)", "단계": "8차 매수", "S값 조건": "S ≤ -35", "투입 비중": "3%", "행동 지침": "하락 밴드 깊어지는 구간 마지막 가벼운 입질"},
+                {"신호등 색상": "🔴 빨간불 (투하)", "단계": "9차 매수", "S값 조건": "S ≤ -45", "투입 비중": "25%", "행동 지침": "[1차 투하] 거래량 폭증 + 하락 둔화 시 25% 투입"},
+                {"신호등 색상": "🔴 빨간불 (풀베팅)", "단계": "10차 매수", "S값 조건": "S ≤ -60", "투입 비중": "66%", "행동 지침": "[최종 방어] -60 패닉 공포 구간 모든 현금 소진"},
             ]
             st.dataframe(pd.DataFrame(buy_guide_data), use_container_width=True)
 
             st.markdown("---")
-            st.markdown("##### 💡 [휩쏘 방어 핵심 원칙]")
-            st.info("• **단발성 튀어 오름 무시**: S값이 장중에 갑자기 출렁이더라도, **반드시 오후 3시 30분 종가(마감)** 기준으로 조건이 충족되는지 확인하세요.\n• **연속성 확인**: 널뛰기 장세에서는 하루 만에 매매를 번복하지 말고, 추세의 지속성을 확인하는 여유를 가집니다.")
+            st.markdown("##### 💡 [핵심 요약 규칙]")
+            st.info("• **🟢 초록불(관망)**: 절대 사지 말고 쉬는 구간입니다.\n• **🟡 노란불(입질)**: 3%씩 가볍게 맛만 보는 구간입니다.\n• **🔴 빨간불(투하)**: 바닥권에서 화력을 집중해 물량을 쓸어 담는 구간입니다.")
 
         with tab3:
             st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기")
@@ -420,7 +426,7 @@ if stock_code:
 
             st.markdown("---")
             if total_pl_rate <= -10:
-                st.warning(f"📉 전체 포트폴리오 종합 수익률이 **{total_pl_rate:.2f}%**입니다. 휩쏘 방어형 10단계 플랜에 따라 냉정하게 자금을 관리하세요.")
+                st.warning(f"📉 전체 포트폴리오 종합 수익률이 **{total_pl_rate:.2f}%**입니다. 신호등 가이드에 맞춰 냉정하게 자금을 관리하세요.")
             elif total_pl_rate >= 5:
                 st.info(f"📈 전체 포트폴리오 종합 수익률이 **{total_pl_rate:.2f}%**로 상승 구간입니다. 익절 가이드에 맞춰 단계별 현금화를 검토해 보세요.")
             else:
