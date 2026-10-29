@@ -23,12 +23,19 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (스마트 브리핑 탑재)")
+st.subheader("📈 간편 교대 매매 시스템 (안정형 네이버 금융 연동)")
+
+# 🔥 [핵심 안전장치] 공유받은 사람이 절대 맹신하지 않도록 앱 최상단에 상시 고정 경고 배너 노출
+st.error("🚨 **[필독] 맹신 금지 및 면책 공지**: 본 시스템은 자동으로 주식을 매수·매도하는 자동매매 프로그램이 아닙니다. 과거 데이터 기반의 '낙폭 및 S값 계산 참고용 도구'일 뿐이며, **모든 매매 판단과 투자 손실의 책임은 전적으로 사용자 본인**에게 있습니다. 횡보장이나 대형주에서는 지표가 왜곡될 수 있으니 주의하세요!")
 
 # 네이버 금융 일별 시세 크롤링 함수 (개별 종목 및 지수 공용)
 @st.cache_data(ttl=3600)
 def get_naver_stock_data(code, count=1250):
-    url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count={count}&requestType=0"
+    clean_code = str(code).strip()
+    if not clean_code:
+        clean_code = "233740"
+        
+    url = f"https://fchart.stock.naver.com/sise.nhn?symbol={clean_code}&timeframe=day&count={count}&requestType=0"
     try:
         response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
         if response.status_code != 200:
@@ -58,7 +65,7 @@ def get_naver_stock_data(code, count=1250):
         df = pd.DataFrame(data)
         df['Date'] = pd.to_datetime(df['Date'])
         df.set_index('Date', inplace=True)
-        return df, code
+        return df, clean_code
     except Exception as e:
         return None, None
 
@@ -101,14 +108,14 @@ def resolve_code_and_name(user_str):
         for k, v in name_to_code.items():
             if clean_str in k:
                 return v, k
-        return "233740", clean_str
+        return clean_str, clean_str
 
 # 🔍 상단 메인 검색 Form
 with st.form(key="search_form"):
     col_in1, col_in2, col_in3 = st.columns([2, 1, 1])
     with col_in1:
         user_input = st.text_input(
-            "🔍 조회할 메인 종목 또는 종목코드 입력",
+            "🔍 조회할 종목명 또는 종목코드 입력",
             value="233740",
             placeholder="예: 삼성전자 또는 233740"
         ).strip()
@@ -162,31 +169,11 @@ def style_table(df_target, df_full):
                 try:
                     s_num = float(val)
                     if s_num > 0:
-                        ratio = min(1.0, s_num / 50.0)
-                        r = 255; g = int(230 - ratio * 150); b = int(230 - ratio * 150)
-                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: #B71C1C; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
+                        styles[idx] = 'color: #B71C1C; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
                     elif s_num < 0:
-                        ratio = min(1.0, abs(s_num) / 60.0)
-                        r = int(230 - ratio * 150); g = int(230 - ratio * 150); b = 255
-                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
+                        styles[idx] = 'color: #0D47A1; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
                     else:
                         styles[idx] = 'background-color: #E0E0E0; color: #333333; font-weight: bold;'
-                except:
-                    pass
-
-            elif col_name in ['MM', 'PM', 'LM', 'RM']:
-                try:
-                    v = float(val)
-                    vmin, vmax = col_bounds.get(col_name, (0, 1))
-                    ratio = 0.0 if vmax == vmin else max(0.0, min(1.0, (v - vmin) / (vmax - vmin)))
-                    
-                    if col_name == 'PM' and v < 0:
-                        ratio_neg = min(1.0, abs(v) / 50.0)
-                        r = int(240 - ratio_neg * 150); g = int(240 - ratio_neg * 150); b = 255
-                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: bold; padding: 2px 6px; border-radius: 6px;'
-                    else:
-                        r = 255; g = int(245 - ratio * 170); b = int(245 - ratio * 170)
-                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.5 else "#222222"}; font-weight: {"bold" if ratio > 0.4 else "normal"}; padding: 2px 6px; border-radius: 6px;'
                 except:
                     pass
 
@@ -486,3 +473,5 @@ if stock_code:
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_result.to_excel(writer, index=False, sheet_name="Trading_System")
             st.download_button(label="📥 매매전략 엑셀 다운로드", data=output.getvalue(), file_name=f"전략_{stock_code}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    else:
+        st.error("입력하신 종목의 데이터를 찾을 수 없습니다. 올바른 국내 종목명 또는 종목코드를 입력해 주세요.")
