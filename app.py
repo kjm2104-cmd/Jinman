@@ -23,7 +23,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (스마트 브리핑 탑재)")
+st.subheader("📈 간편 교대 매매 시스템 (S값 왜곡 감지 및 경고 탑재)")
 
 # 네이버 금융 일별 시세 크롤링 함수 (개별 종목 및 지수 공용)
 @st.cache_data(ttl=3600)
@@ -298,11 +298,19 @@ def calculate_indicator_sheet(df_raw):
         'MM': mm_list, 'PM': pm_list, 'LM': lm_list, 'S': s_list, 'RM': rm_list
     })
 
+    # 🔥 최근 20거래일 변동성 및 S값 왜곡(횡보) 감지 로직
+    recent_closes = closes[-20:] if len(closes) >= 20 else closes
+    recent_s = s_list[-20:] if len(s_list) >= 20 else s_list
+    price_range_pct = (np.max(recent_closes) - np.min(recent_closes)) / np.mean(recent_closes) if len(recent_closes) > 0 else 1.0
+    
+    is_sideways_distortion = (price_range_pct < 0.04) or (np.mean(recent_s) <= -50 and np.std(recent_s) < 3.0)
+
     summary = {
         'B1': int(closes[-1]), 'C1': int(vols[-1]), 'cur_chg': chg[-1] * 100,
         'MM': mm_list[-1], 'PM': pm_list[-1], 'LM': lm_list[-1], 'S': s_list[-1],
         'current_signal': buy_signals[-1],
         'max_mn': max_mn, 'min_pq': min_pq,
+        'is_distortion': is_sideways_distortion,
         'state': "상승 파동 중" if state == 'UP' else "하락 파동 중"
     }
     return df_out, summary
@@ -327,6 +335,7 @@ if stock_code:
 
         current_s_val = s['S']
         cur_sig = s['current_signal']
+        is_distortion = s.get('is_distortion', False)
         
         max_mn_val = s.get('max_mn', 0)
         min_pq_val = s.get('min_pq', 0)
@@ -342,7 +351,12 @@ if stock_code:
                 target_prices_4step.append(f"<b>{name}</b>: <span style='color:#D32F2F;'>{tp:,}원 이하</span> (S≤{s_tgt})")
 
         # 🔥 [오늘의 실전 행동 가이드 (Action Item)] 정의
-        if "강력진입구간" in cur_sig:
+        if is_distortion:
+            action_title = f"⚠️ [주의] S값 왜곡 및 장기 횡보 종목 감지됨"
+            action_desc = "현재 종목은 변동성이 정체되었거나 S값이 왜곡되어 있을 수 있습니다."
+            action_item = "🚨 **[오늘의 Action Item]**: 시스템 신호 맹신 금지! 대형주나 횡보형 종목은 한 달 농사 스윙에서 제외하거나 관망을 권장합니다."
+            badge_color = "#D32F2F"
+        elif "강력진입구간" in cur_sig:
             action_title = f"🟣 [{cur_sig}] ➔ 최후 승부수 구간 도달!"
             action_desc = "S ≤ -55 최하단 바닥에 도달했습니다. 모든 화력을 집중할 때입니다."
             action_item = "🚨 **[오늘의 Action Item]**: 4차 강력진입구간 비중(40%) 전액 집행 및 지정가 매수 세팅"
@@ -380,7 +394,7 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        if target_prices_4step:
+        if target_prices_4step and not is_distortion:
             st.markdown(f"""
             <div style="background-color: #FFF3E0; border: 1px solid #FFB74D; padding: 10px; border-radius: 8px; margin-bottom: 12px; font-size: 0.85rem; color: #333; line-height: 1.4;">
                 <b>🎯 [4단계 지정가 세팅 가이드] 다음 영업일 주요 도달 목표가</b><br>
