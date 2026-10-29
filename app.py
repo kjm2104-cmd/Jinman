@@ -23,7 +23,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (4단계 핵심 압축 버전)")
+st.subheader("📈 간편 교대 매매 시스템 (컬러 시각화 복원 버전)")
 
 # 네이버 금융 일별 시세 크롤링 함수 (개별 종목 및 지수 공용)
 @st.cache_data(ttl=3600)
@@ -66,7 +66,7 @@ def get_naver_stock_data(code, count=1250):
     except Exception as e:
         return None, None
 
-# 주요 종목 빠른 매핑 사전 (국내 및 해외형 ETF/지수 포함)
+# 주요 종목 빠른 매핑 사전
 name_to_code = {
     "코스피지수": "KOSPI",
     "코스닥지수": "KOSDAQ",
@@ -76,9 +76,7 @@ name_to_code = {
     "KODEX 200": "069500",
     "SK하이닉스": "000660",
     "LG에너지솔루션": "373220",
-    "현대차": "005380",
-    "애플": "305540", # 국내 상장 해외 테마형 대체 참고용 코드 예시 등 자유롭게 매핑 가능
-    "테슬라": "371460"
+    "현대차": "005380"
 }
 
 code_to_name = {
@@ -105,7 +103,7 @@ def resolve_code_and_name(user_str):
         return code, name
     else:
         for k, v in name_to_code.items():
-            if clean_str.lower() in k.lower():
+            if clean_str in k:
                 return v, k
         return clean_str, clean_str
 
@@ -129,6 +127,7 @@ stock_code, stock_name = resolve_code_and_name(user_input)
 def r10(val):
     return int(np.floor(val / 10.0 + 0.5) * 10)
 
+# 🔥 지표별 동적 컬러 그라데이션 및 신호 스타일링 함수 복원
 def style_table(df_target, df_full):
     cols_grad = ['MM', 'PM', 'LM', 'RM', 'S']
     col_bounds = {}
@@ -168,11 +167,31 @@ def style_table(df_target, df_full):
                 try:
                     s_num = float(val)
                     if s_num > 0:
-                        styles[idx] = 'color: #B71C1C; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
+                        ratio = min(1.0, s_num / 50.0)
+                        r = 255; g = int(230 - ratio * 150); b = int(230 - ratio * 150)
+                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: #B71C1C; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
                     elif s_num < 0:
-                        styles[idx] = 'color: #0D47A1; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
+                        ratio = min(1.0, abs(s_num) / 60.0)
+                        r = int(230 - ratio * 150); g = int(230 - ratio * 150); b = 255
+                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
                     else:
                         styles[idx] = 'background-color: #E0E0E0; color: #333333; font-weight: bold;'
+                except:
+                    pass
+
+            elif col_name in ['MM', 'PM', 'LM', 'RM']:
+                try:
+                    v = float(val)
+                    vmin, vmax = col_bounds.get(col_name, (0, 1))
+                    ratio = 0.0 if vmax == vmin else max(0.0, min(1.0, (v - vmin) / (vmax - vmin)))
+                    
+                    if col_name == 'PM' and v < 0:
+                        ratio_neg = min(1.0, abs(v) / 50.0)
+                        r = int(240 - ratio_neg * 150); g = int(240 - ratio_neg * 150); b = 255
+                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: bold; padding: 2px 6px; border-radius: 6px;'
+                    else:
+                        r = 255; g = int(245 - ratio * 170); b = int(245 - ratio * 170)
+                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.5 else "#222222"}; font-weight: {"bold" if ratio > 0.4 else "normal"}; padding: 2px 6px; border-radius: 6px;'
                 except:
                     pass
 
@@ -383,7 +402,7 @@ if stock_code:
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 4단계 가이드 & 자동금액", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 4단계 핵심 압축 시스템이 적용된 실전 마스터 표입니다.")
+            st.caption("📈 4단계 핵심 압축 시스템과 컬러 시각화가 적용된 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
