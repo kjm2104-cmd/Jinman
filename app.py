@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (실전 포트폴리오 분석기)")
+st.subheader("📈 간편 교대 매매 시스템 (10단계 실전 포트폴리오 분석기)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -144,7 +144,7 @@ def style_table(df_target, df_full):
                     pass
             elif col_name == '매수신호(레버리지/인버스)':
                 val_str = str(val)
-                if '7차 최종' in val_str or '7차 풀베팅' in val_str or '5차 최종익절' in val_str: 
+                if '10차' in val_str or '9차' in val_str or '최종익절' in val_str: 
                     styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
                 elif '매수' in val_str: 
                     styles[idx] = 'background-color: #D32F2F; color: #FFFFFF; font-weight: bold;'
@@ -214,71 +214,47 @@ def calculate_indicator_sheet(df_raw):
         lm = int(round((p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
         s_val = lm - mm
 
-        if s_val <= -45:
-            sig = "🔥 7차 매수 (풀베팅 / 누적 100%)"
+        # 🔥 반영된 10단계 매수 플랜 로직 (-60 대응 & 1~5차 관망)
+        if s_val <= -60:
+            sig = "🔥 10차 풀베팅 (누적 100% / -60 바닥)"
             invest_pct = "레버리지 100%"
-            cash_pct = "현금 관리"
+            cash_pct = "현금 소진"
             invest_ratio = 1.0
+        elif s_val <= -45:
+            sig = "🚨 9차 대규모 투하 (누적 49%)"
+            invest_pct = "레버리지 49%"
+            cash_pct = "현금 관리"
+            invest_ratio = 0.49
         elif s_val <= -35:
-            sig = "🚨 6차 매수 (누적 85%)"
-            invest_pct = "레버리지 85%"
+            sig = "⚠️ 8차 입질 (누적 9%)"
+            invest_pct = "레버리지 9%"
             cash_pct = "현금 관리"
-            invest_ratio = 0.85
+            invest_ratio = 0.09
+        elif s_val <= -30:
+            sig = "⚠️ 7차 입질 (누적 6%)"
+            invest_pct = "레버리지 6%"
+            cash_pct = "현금 관리"
+            invest_ratio = 0.06
         elif s_val <= -25:
-            sig = "⚠️ 5차 매수 (누적 65%)"
-            invest_pct = "레버리지 65%"
+            sig = "🔍 6차 입질 (누적 3%)"
+            invest_pct = "레버리지 3%"
             cash_pct = "현금 관리"
-            invest_ratio = 0.65
-        elif s_val <= -18:
-            sig = "⚠️ 4차 매수 (누적 45%)"
-            invest_pct = "레버리지 45%"
-            cash_pct = "현금 관리"
-            invest_ratio = 0.45
-        elif s_val <= -12:
-            sig = "🔍 3차 매수 (누적 30%)"
-            invest_pct = "레버리지 30%"
-            cash_pct = "현금 관리"
-            invest_ratio = 0.30
-        elif s_val <= -7:
-            sig = "🔍 2차 매수 (누적 15%)"
-            invest_pct = "레버리지 15%"
-            cash_pct = "현금 관리"
-            invest_ratio = 0.15
-        elif s_val <= -3:
-            sig = "🔍 1차 매수 (5%)"
-            invest_pct = "레버리지 5%"
-            cash_pct = "현금 관리"
-            invest_ratio = 0.05
+            invest_ratio = 0.03
+        elif s_val <= -20:
+            sig = "🛡️ 1~5차 구간 (철저한 관망)"
+            invest_pct = "레버리지 0% (관망)"
+            cash_pct = "현금 100% 사수"
+            invest_ratio = 0.0
         elif s_val >= 0:
-            sig = "🔥 5차 최종익절 (전량 현금화 완료)"
-            invest_pct = "레버리지 0% (현금 100%)"
+            sig = "🔥 최종 익절 (전량 현금화 완료)"
+            invest_pct = "레버리지 0%"
             cash_pct = "현금 100%"
             invest_ratio = 0.0
-        elif s_val >= -5:
-            sig = "✨ 4차 익절 (누적 80% 현금화)"
-            invest_pct = "레버리지 20% 잔여"
-            cash_pct = "현금 80%"
-            invest_ratio = 0.20
-        elif s_val >= -15:
-            sig = "✨ 3차 익절 (누적 60% 현금화)"
-            invest_pct = "레버리지 40% 잔여"
-            cash_pct = "현금 60%"
-            invest_ratio = 0.40
-        elif s_val >= -25:
-            sig = "✨ 2차 익절 (누적 40% 현금화)"
-            invest_pct = "레버리지 60% 잔여"
-            cash_pct = "현금 40%"
-            invest_ratio = 0.60
-        elif s_val >= -35:
-            sig = "✨ 1차 익절 (누적 20% 현금화)"
-            invest_pct = "레버리지 80% 잔여"
-            cash_pct = "현금 20%"
-            invest_ratio = 0.80
         else:
-            sig = "중립 대기 구간"
+            sig = "⚖️ 1~5차 구간 (관망 대기)"
             invest_pct = "기존 비중 유지"
-            cash_pct = "현금 관리"
-            invest_ratio = 0.50
+            cash_pct = "현금 100% 사수"
+            invest_ratio = 0.0
 
         d_cur = pd.Timestamp(dates[i])
         w_slice = closes[:i+1][pd.to_datetime(dates[:i+1]) >= (d_cur - pd.DateOffset(years=1))]
@@ -319,18 +295,18 @@ if stock_code:
         df_result, s = calculate_indicator_sheet(raw_df)
 
         current_s_val = s['S']
-        if current_s_val <= -3:
-            action_title = "📉 [하락장 매수 모드]"
-            action_desc = f"현재 S값({current_s_val})이 하락 구간입니다. 7단계 매수 플랜에 맞춰 비중별로 매수를 진행하세요."
+        if current_s_val <= -25:
+            action_title = "📉 [하락장 10단계 매수 모드]"
+            action_desc = f"현재 S값({current_s_val})이 하락 구간입니다. 10단계 확장 플랜(거래량 동반 여부 확인)에 맞춰 대응하세요."
             badge_color = "#D32F2F"
-        elif current_s_val >= -35:
-            action_title = "📈 [상승장 익절 모드]"
-            action_desc = f"현재 S값({current_s_val})이 마이너스 회복 구간입니다. S값 회복 5분할 익절 규칙에 따라 현금화를 실행하세요."
-            badge_color = "#1976D2"
+        elif current_s_val >= -20:
+            action_title = "🛡️ [1~5차 철저한 관망 모드]"
+            action_desc = f"현재 S값({current_s_val})이 얕은 조정 구간입니다. 시드를 아끼고 현금을 100% 사수하세요."
+            badge_color = "#2E7D32"
         else:
-            action_title = "⚖️ [중립 관망 모드]"
-            action_desc = f"현재 S값({current_s_val})은 대기 구간입니다. 다음 신호를 기다리세요."
-            badge_color = "#555555"
+            action_title = "📈 [상승장 익절 모드]"
+            action_desc = f"현재 S값({current_s_val})이 회복 구간입니다. 분할 익절 원칙에 따라 현금화를 실행하세요."
+            badge_color = "#1976D2"
 
         st.markdown(f"""
         <div style="background-color: #F8F9FA; border-left: 5px solid {badge_color}; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
@@ -348,46 +324,32 @@ if stock_code:
         c3.metric("기준 지표 상태", s['state'])
         c4.metric("추천 현금 비중", s['cash_pct'])
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 실시간 매매 가이드", "💼 실전 보유 포트폴리오 계산기", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 실시간 10단계 가이드", "💼 실전 보유 포트폴리오 계산기", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 S값 기준 [7단계 매수] 및 [마이너스 회복 5분할 익절]이 통합 반영된 마스터 표입니다.")
+            st.caption("📈 S값 기준 [-60 확장형 10단계 매수] 및 익절 전략이 통합 반영된 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
         with tab2:
-            st.markdown("##### 📉 [1단계] 실전 7단계 매수 플랜")
+            st.markdown("##### 📉 [-60 확장형] 실전 10단계 매수 마스터 플랜")
             buy_guide_data = [
-                {"단계": "1차 매수", "S값 조건": "S ≤ -3", "투입 비중": "5%", "설명": "하락 초입 가볍게 입질"},
-                {"단계": "2차 매수", "S값 조건": "S ≤ -7", "투입 비중": "10%", "설명": "조정 시 추가 비중 확대"},
-                {"단계": "3차 매수", "S값 조건": "S ≤ -12", "투입 비중": "15%", "설명": "하락세 깊어질 때 물량 확보"},
-                {"단계": "4차 매수", "S값 조건": "S ≤ -18", "투입 비중": "15%", "설명": "중간 지점 비중 안정적 채우기"},
-                {"단계": "5차 매수", "S값 조건": "S ≤ -25", "투입 비중": "20%", "설명": "깊은 조정 구간 굵직하게 싣기"},
-                {"단계": "6차 매수", "S값 조건": "S ≤ -35", "투입 비중": "20%", "설명": "공포 확산 바닥권 대규모 담기"},
-                {"단계": "7차 풀베팅", "S값 조건": "S ≤ -45", "투입 비중": "15%", "설명": "[최종 바닥] 분할 매수 한도 소진"},
+                {"단계": "1~5차 매수", "S값 조건": "S ≥ -20", "투입 비중": "0% (관망)", "설명": "얕은 하락·횡보 시 시드 100% 사수 (대기)"},
+                {"단계": "6차 매수", "S값 조건": "S ≤ -25", "투입 비중": "3%", "설명": "하락세 본격화 첫 번째 가벼운 입질"},
+                {"단계": "7차 매수", "S값 조건": "S ≤ -30", "투입 비중": "3%", "설명": "공포가 스며들기 시작할 때 두 번째 입질"},
+                {"단계": "8차 매수", "S값 조건": "S ≤ -35", "투입 비중": "3%", "설명": "하락 밴드 깊어지는 구간 마지막 가벼운 입질"},
+                {"단계": "9차 매수", "S값 조건": "S ≤ -45", "투입 비중": "40%", "설명": "[본격 투하] 거래량 폭증 시 잔여 현금의 40% 투입"},
+                {"단계": "10차 풀베팅", "S값 조건": "S ≤ -60", "투입 비중": "51%", "설명": "[최종 바닥] -60 패닉 공포 구간 모든 현금 소진"},
             ]
             st.dataframe(pd.DataFrame(buy_guide_data), use_container_width=True)
 
             st.markdown("---")
-            st.markdown("##### 📈 [2단계] 마이너스 회복 구간 5분할 익절 가이드")
-            st.info("마이너스 회복 구간(-35 ~ 0) 진입 시 아래 S값 조건에 따라 단계별 현금화를 실행하세요.")
-
-            current_s = float(s['S'])
-            def get_minus_status(min_s):
-                return "🟢 도달 완료 (실행)" if current_s >= min_s else "⚪ 대기 중"
-
-            sell_guide_data = [
-                {"단계": "1차 익절 (20% 현금화)", "S값 회복 조건": "S ≥ -35", "진행 상태": get_minus_status(-35), "설명": "지하 탈출 첫 번째 반등 시"},
-                {"단계": "2차 익절 (20% 현금화)", "S값 회복 조건": "S ≥ -25", "진행 상태": get_minus_status(-25), "설명": "완만한 회복세 진입 시"},
-                {"단계": "3차 익절 (20% 현금화)", "S값 회복 조건": "S ≥ -15", "진행 상태": get_minus_status(-15), "설명": "중립 구간 향해 상승 시"},
-                {"단계": "4차 익절 (20% 현금화)", "S값 회복 조건": "S ≥ -5", "진행 상태": get_minus_status(-5), "설명": "마이너스 터널 끝자락 도달 시"},
-                {"단계": "5차 최종 (잔여 20%)", "S값 회복 조건": "S ≥ 0 (기준선)", "진행 상태": get_minus_status(0), "설명": "[전량 현금화 완료] 다음 폭락장 대기"},
-            ]
-            st.dataframe(pd.DataFrame(sell_guide_data), use_container_width=True)
+            st.markdown("##### 💡 [핵심 매매 원칙] 거래량 동반 시그널 활용법")
+            st.info("• **1~5차 구간**: 고점에서 꺾여 내려오더라도 S값이 -20 이상인 얕은 조정에서는 절대 매수하지 않고 철저히 관망합니다.\n• **6~8차 구간**: 3%씩 가볍게 발을 담그며 흐름을 체크합니다.\n• **9~10차 구간**: 단순 S값 도달뿐만 아니라 **'며칠 동안 대규모 거래량이 터지는지'**를 함께 확인하며 확신이 들 때 대규모 자금을 실어줍니다.")
 
         with tab3:
-            st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기 (조회 버튼 적용)")
-            st.caption("보유 종목 칸에 **종목명**이나 **6자리 코드**를 입력하고 **[🔍 종목 조회]** 버튼을 누르시면, 해당 종목의 정식 이름과 실시간 현재가가 확정 반영되어 총 손익이 계산됩니다.")
+            st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기")
+            st.caption("보유 종목 칸에 **종목명**이나 **6자리 코드**를 입력하고 **[🔍 조회]** 버튼을 누르시면, 네이버 금융 실시간 현재가가 반영되어 총 손익이 계산됩니다.")
 
             if 'my_portfolio_items' not in st.session_state:
                 st.session_state.my_portfolio_items = [
@@ -422,7 +384,6 @@ if stock_code:
                     with cols[3]:
                         item["avg_price"] = st.number_input(f"평단가 {idx+1}", min_value=0, value=item["avg_price"], step=10, key=f"mp_price_{item['id']}")
                     
-                    # 확정된 종목코드로 네이버 금융에서 실시간 현재가 조회
                     live_df, _ = get_naver_stock_data(item["confirmed_code"], count=5)
                     live_curr_price = int(live_df['Close'].iloc[-1]) if live_df is not None and not live_df.empty else item["avg_price"]
 
@@ -459,9 +420,9 @@ if stock_code:
 
             st.markdown("---")
             if total_pl_rate <= -10:
-                st.warning(f"📉 전체 포트폴리오 종합 수익률이 **{total_pl_rate:.2f}%**입니다. S값 하락 모드와 7단계 매수 플랜에 따라 냉정하게 자금을 관리하세요.")
+                st.warning(f"📉 전체 포트폴리오 종합 수익률이 **{total_pl_rate:.2f}%**입니다. -60 확장형 10단계 플랜에 따라 철저하게 자금을 관리하세요.")
             elif total_pl_rate >= 5:
-                st.info(f"📈 전체 포트폴리오 종합 수익률이 **{total_pl_rate:.2f}%**로 상승 구간입니다. S값 회복 익절 가이드에 맞춰 단계별 현금화를 검토해 보세요.")
+                st.info(f"📈 전체 포트폴리오 종합 수익률이 **{total_pl_rate:.2f}%**로 상승 구간입니다. 익절 가이드에 맞춰 단계별 현금화를 검토해 보세요.")
             else:
                 st.success(f"⚖️ 전체 포트폴리오가 안정적인 보합/횡보 구간에 있습니다. (종합 수익률: **{total_pl_rate:.2f}%**)")
 
