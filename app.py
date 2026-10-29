@@ -4,8 +4,6 @@ import numpy as np
 import requests
 from datetime import datetime, timedelta
 from io import BytesIO
-import gspread
-from google.oauth2.service_account import Credentials
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
@@ -15,6 +13,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# 모바일 가독성 및 태그(Badge) 스타일링 CSS
 st.markdown("""
 <style>
     .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
@@ -23,32 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (구글 스프레드시트 실시간 연동)")
-
-# 🔗 구글 스프레드시트 연동 함수 (개인키 자동 보정 기능 포함)
-@st.cache_resource
-def get_gsheet_connection():
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    try:
-        if "gcp_service_account" in st.secrets:
-            creds_dict = dict(st.secrets["gcp_service_account"])
-            
-            # 🔥 핵심: Secrets에 들어온 개인키의 문자열 \n을 실제 줄바꿈으로 자동 변환
-            if "private_key" in creds_dict:
-                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-                
-            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-            client = gspread.authorize(creds)
-            sheet_url = "https://docs.google.com/spreadsheets/d/14_iZl-8eS3nV7PW2JB7LSODbAE_Llf_DX0Do6ogBxes/edit?gid=0#gid=0"
-            sheet = client.open_by_url(sheet_url).sheet1
-            return sheet, None
-        else:
-            return None, "Streamlit Secrets에 'gcp_service_account' 설정이 없습니다."
-    except Exception as e:
-        return None, str(e)
+st.subheader("📈 간편 교대 매매 시스템 (실전 포트폴리오 분석기)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -113,6 +87,7 @@ with st.form(key="search_form"):
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
         submit_search = st.form_submit_button("🔍 조회하기", use_container_width=True)
 
+# 입력값 파싱
 if user_input in name_to_code:
     stock_code = name_to_code[user_input]
     stock_name = user_input
@@ -363,7 +338,7 @@ if stock_code:
         c3.metric("기준 지표 상태", s['state'])
         c4.metric("추천 현금 비중", s['cash_pct'])
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 실시간 매매 가이드", "📝 매매일지 & 최근 기록 뷰어", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 통합 표", "🎯 실시간 매매 가이드", "💼 실전 보유 포트폴리오 계산기", "💾 엑셀 다운로드"])
 
         with tab1:
             st.caption("📈 S값 기준 [7단계 매수] 및 [마이너스 회복 5분할 익절]이 통합 반영된 마스터 표입니다.")
@@ -401,51 +376,37 @@ if stock_code:
             st.dataframe(pd.DataFrame(sell_guide_data), use_container_width=True)
 
         with tab3:
-            st.markdown("##### 📝 구글 스프레드시트 연동 매매일지 저장 및 최근 기록 요약")
-            
-            sheet, err_msg = get_gsheet_connection()
+            st.markdown(f"##### 💼 [{stock_name}] 실전 보유 포트폴리오 성과 분석기")
+            st.caption("내 평단가와 보유 수량을 입력하면 현재 실시간 주가와 비교하여 평가금액, 손익, 수익률을 한눈에 계산해 드립니다.")
 
-            if sheet is not None:
-                try:
-                    all_rows = sheet.get_all_records()
-                    if all_rows:
-                        st.markdown("📋 **[최근 매매 기록 요약]** (구글 시트 연동 최신순)")
-                        df_logs = pd.DataFrame(all_rows)
-                        st.dataframe(df_logs.iloc[::-1].head(10), use_container_width=True)
-                    else:
-                        st.info("💡 아직 구글 스프레드시트에 기록된 매매일지가 없습니다. 아래 폼에서 첫 기록을 남겨보세요!")
-                except Exception as e:
-                    st.error(f"구글 시트 데이터를 읽어오는 중 에러 발생: {e}")
-            else:
-                st.error(f"❌ 구글 시트 연결 실패 에러 내용: {err_msg}")
+            col_p1, col_p2 = st.columns(2)
+            with col_p1:
+                my_avg_price = st.number_input("내 평균 매입 단가 (원)", min_value=0, value=5330, step=10)
+            with col_p2:
+                my_qty = st.number_input("보유 수량 (주)", min_value=0, value=5717, step=1)
+
+            current_price = int(s['B1'])
+            total_invested = my_avg_price * my_qty
+            current_eval = current_price * my_qty
+            profit_loss = current_eval - total_invested
+            profit_rate = (current_price / my_avg_price - 1.0) * 100 if my_avg_price > 0 else 0
 
             st.markdown("---")
-            st.markdown("##### ✍️ 새로운 매매 내역 기록하기")
+            
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("총 투자원금", f"{total_invested:,}원")
+            mc2.metric("현재 평가금액", f"{current_eval:,}원", f"{profit_rate:+.2f}%")
+            mc3.metric("평가 손익", f"{profit_loss:,}원", f"{'수익' if profit_loss >= 0 else '손실'}")
 
-            with st.form("trade_log_form"):
-                col_f1, col_f2 = st.columns(2)
-                with col_f1:
-                    t_date = st.date_input("거래 일자", datetime.today())
-                    t_종목 = st.text_input("종목명", value=f"{stock_name} ({stock_code})")
-                    t_qty = st.number_input("거래 수량 (주)", min_value=0, value=100, step=1)
-                with col_f2:
-                    t_type = st.selectbox("매매 구분", ["레버리지 1~2차 매수 (5%~10%)", "레버리지 3~4차 매수 (15%)", "레버리지 5~6차 매수 (20%)", "레버리지 7차 풀베팅", "마이너스 회복 1~2차 익절", "마이너스 회복 3~5차 익절", "전량 청산 및 현금화", "현금 입금(+)", "현금 출금(-)"])
-                    t_price = st.number_input("체결 가격 / 입출금액 (원)", min_value=0, value=int(s['B1']), step=100)
-                
-                t_amt = st.number_input("투자 금액 / 변동 금액 (원)", min_value=0, value=3000000, step=100000)
-                t_memo = st.text_input("메모", placeholder="특이사항이나 매매 사유 입력")
-                
-                submitted = st.form_submit_button("구글 시트에 매매일지 저장하기")
-                if submitted:
-                    if sheet is not None:
-                        try:
-                            row_data = [str(t_date), t_종목, t_type, str(t_qty), f"{t_price:,}원", f"{t_amt:,}원", t_memo]
-                            sheet.append_row(row_data)
-                            st.success("✨ 구글 스프레드시트에 매매일지가 실시간으로 안전하게 저장되었습니다!")
-                        except Exception as e:
-                            st.error(f"구글 시트 저장 중 오류 발생: {e}")
-                    else:
-                        st.error(f"구글 시트 연결이 되어있지 않아 저장할 수 없습니다. (원인: {err_msg})")
+            # 실전 매매 가이드 조언 연동
+            st.markdown("---")
+            st.markdown("##### 💡 현재 포트폴리오 진단 및 코멘트")
+            if profit_rate <= -10:
+                st.warning(f"📉 현재 평단가 대비 수익률이 **{profit_rate:.2f}%**입니다. S값 하락 모드와 분할 매수 플랜을 참고하여 침착하게 대응하세요.")
+            elif profit_rate >= 5:
+                st.info(f"📈 현재 평단가 대비 수익률이 **{profit_rate:.2f}%**로 상승 구간입니다. S값 회복 익절 가이드를 참고하여 분할 현금화를 고려해 보세요.")
+            else:
+                st.success(f"⚖️ 현재 평단가 근처에서 안정적으로 횡보/보합 중입니다. (수익률: **{profit_rate:.2f}%**)")
 
         with tab4:
             output = BytesIO()
