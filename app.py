@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (쌍바닥 & 거래량 저격 엔진)")
+st.subheader("📈 간편 교대 매매 시스템 (유연한 격발 & 동적 거래량 시각화)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -130,12 +130,37 @@ def style_table(df_target, df_full):
     def color_styler(row_idx, row):
         styles = [''] * len(row)
         curr_close = row.get('종가(B)', 0)
-        prev_close = df_full.iloc[row_idx - 1].get('종가(B)', 0) if row_idx > 0 else None
+        prev_close = df_full.iloc[row.name - 1].get('종가(B)', 0) if row.name > 0 else None
 
         for idx, col_name in enumerate(row.index):
             val = row[col_name]
             if col_name in ['종가(B)', '등락률(C)'] and prev_close is not None:
                 styles[idx] = 'color: #D32F2F; font-weight: bold;' if curr_close > prev_close else ('color: #1976D2; font-weight: bold;' if curr_close < prev_close else 'color: #111111;')
+            
+            # 🔥 거래량(E) 전일 대비 증감에 따른 붉은색/파란색 동적 진하기 시각화
+            elif col_name == '거래량(E)':
+                try:
+                    curr_vol = float(val)
+                    prev_vol = float(df_full.iloc[row.name - 1]['거래량(E)']) if row.name > 0 else curr_vol
+                    vol_diff_ratio = (curr_vol - prev_vol) / prev_vol if prev_vol > 0 else 0.0
+                    
+                    if vol_diff_ratio >= 0:
+                        # 증가 ➔ 붉은색 계열 (비율이 클수록 진하게)
+                        ratio = min(1.0, vol_diff_ratio / 1.0)
+                        r = 255
+                        g = int(240 - ratio * 180)
+                        b = int(240 - ratio * 180)
+                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.3 else "#222222"}; font-weight: bold;'
+                    else:
+                        # 감소 ➔ 파란색 계열 (감소 폭이 클수록 진하게)
+                        ratio = min(1.0, abs(vol_diff_ratio) / 0.5)
+                        r = int(240 - ratio * 180)
+                        g = int(240 - ratio * 180)
+                        b = 255
+                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#0D47A1" if ratio > 0.3 else "#222222"}; font-weight: bold;'
+                except:
+                    pass
+
             elif col_name == 'S':
                 try:
                     s_num = float(val)
@@ -202,7 +227,7 @@ def calculate_indicator_sheet(df_raw):
     armed_stage = 0
     cum_invest_ratio = 0.0
 
-    # 🔥 고객님 요청 반영: 6차(3%), 7차(3%), 8차(15%), 9차(34%), 10차(45%) = 총 100%
+    # 6차(3%), 7차(3%), 8차(15%), 9차(34%), 10차(45%) = 총 100%
     stage_weights = {6: 0.03, 7: 0.03, 8: 0.15, 9: 0.34, 10: 0.45}
 
     for i in range(n):
@@ -212,7 +237,7 @@ def calculate_indicator_sheet(df_raw):
         low_p = lows[i]
         cur_chg = chg[i]
         v_ratio = vol_ratio[i]
-        v_spike = (vols[i] >= vol_ma5[i] * 1.3) or (v_ratio >= 1.4)
+        v_spike = (vols[i] >= vol_ma5[i] * 1.2) or (v_ratio >= 1.3)
 
         if state == 'UP':
             if p > peak:
@@ -238,25 +263,18 @@ def calculate_indicator_sheet(df_raw):
         s_val = lm - mm
 
         # ------------------------------------------------------------------
-        # 🛡️ [쌍바닥 & 거래량 동반 저격 엔진]
+        # 🛡️ [유연화된 격발 엔진] (쌍바닥 조건 제거 ➔ 거래량 증가 + 하락 진정/반등)
         # ------------------------------------------------------------------
-        # 최근 40일 내 최저가(전저점/쌍바닥 후보) 탐색
-        lookback_start = max(0, i - 40)
-        recent_low = np.min(lows[lookback_start:i]) if i > lookback_start else low_p
-        # 현재 저점이 최근 최저가 부근(3% 이내)에서 지지를 받는지 확인 (쌍바닥 조건)
-        is_double_bottom = (abs(low_p - recent_low) / recent_low <= 0.03) or (low_p <= recent_low * 1.01)
-
         candle_range = high_p - low_p
         lower_wick_ratio = (min(p, open_p) - low_p) / candle_range if candle_range > 0 else 0.0
-        is_falling_knife = (cur_chg <= -0.02) and (p < ema[i])
+        is_falling_knife = (cur_chg <= -0.025) and (p < ema[i])
 
-        # 8차 이상(고비중 구간) 진입을 위한 엄격한 조건: [거래량 폭증 + 쌍바닥 지지 + 하락 멈춤(반등)]
+        # 8차 이상(고비중 구간) 격발 조건: [거래량 증가(v_spike) 또는 밑꼬리 지지] + [심한 칼날 하락 아님]
         is_heavy_trigger = (
-            v_spike and is_double_bottom and (cur_chg >= -0.01) and not is_falling_knife
+            (v_spike or lower_wick_ratio >= 0.3 or cur_chg >= -0.015) and not is_falling_knife
         )
         
-        # 6~7차 입질용 완화된 조건
-        is_light_trigger = (cur_chg >= -0.025) and not is_falling_knife
+        is_light_trigger = (cur_chg >= -0.03) and not is_falling_knife
 
         if s_val >= 0:
             if cum_invest_ratio > 0 or len(executed_buy_stages) > 0:
@@ -279,11 +297,10 @@ def calculate_indicator_sheet(df_raw):
             elif s_val <= -25:
                 target_buy_stage = 6
 
-            # 8차, 9차, 10차 도달 시 '장전(Arming)' 상태로 등록
             if target_buy_stage >= 8 and target_buy_stage not in executed_buy_stages:
                 armed_stage = max(armed_stage, target_buy_stage)
 
-            # [A] 8차 / 9차 / 10차 고비중 구간 (거래량 동반 쌍바닥 격발 조건 검사)
+            # [A] 8차 / 9차 / 10차 고비중 구간 (유연화된 격발 조건 검사)
             if armed_stage in [8, 9, 10] and armed_stage not in executed_buy_stages:
                 if target_buy_stage > armed_stage:
                     armed_stage = target_buy_stage
@@ -295,16 +312,16 @@ def calculate_indicator_sheet(df_raw):
                             cum_invest_ratio = min(1.0, cum_invest_ratio + stage_weights[stg])
                     pct_int = int(round(stage_weights[armed_stage] * 100))
                     cum_int = int(round(cum_invest_ratio * 100))
-                    sig = f"🔴 [{armed_stage}차 격발!] 쌍바닥+거래량 ➔ {pct_int}% 투하 (누적 {cum_int}%)"
+                    sig = f"🔴 [{armed_stage}차 격발!] 거래량 유입 ➔ {pct_int}% 투하 (누적 {cum_int}%)"
                     armed_stage = 0
                     executed_sell_stages.clear()
                 else:
-                    sig = f"🟠 [{armed_stage}차 장전/대기] 쌍바닥 & 거래량 터질 때까지 대기"
+                    sig = f"🟠 [{armed_stage}차 장전/대기] 거래량 & 반등 대기 중"
 
-            # [B] 6~7차 가벼운 입질 구간 (각 3%)
+            # [B] 6~7차 입질 구간 (각 3%)
             elif target_buy_stage in [6, 7] and target_buy_stage not in executed_buy_stages:
                 if not is_light_trigger:
-                    sig = f"🟠 [{target_buy_stage}차 장전/대기] 급락 중 ➔ 진정 대기"
+                    sig = f"🟠 [{target_buy_stage}차 장전/대기] 급락 중 ➔ 대기"
                 else:
                     for stg in range(6, target_buy_stage + 1):
                         if stg not in executed_buy_stages:
@@ -379,12 +396,12 @@ if stock_code:
         cur_sig = s['current_signal']
         
         if "격발!" in cur_sig:
-            action_title = f"{cur_sig} ➔ 거래량 동반 쌍바닥 확인 완료! 오늘 매수 실행하세요"
-            action_desc = "전저점 쌍바닥 지지 부근에서 대량 거래량이 터지며 하락이 멈추었습니다. 비중을 과감히 실어주세요!"
+            action_title = f"{cur_sig} ➔ 거래량 유입 및 지지 확인 완료! 오늘 매수 실행하세요"
+            action_desc = "하락 진정세와 함께 거래량이 유입되었습니다. 배정된 비중만큼 과감하게 매수를 실행하세요!"
             badge_color = "#D32F2F"
         elif "장전/대기" in cur_sig:
-            action_title = f"{cur_sig} ➔ 아직 거래량과 쌍바닥 조건이 충족되지 않았습니다!"
-            action_desc = "S값은 도달했으나 쌍바닥 지지나 거래량 폭증이 확인할 때까지 🟠 장전 상태로 현금을 꽉 쥐고 기다리세요."
+            action_title = f"{cur_sig} ➔ 거래량 유입 및 하락 진정을 기다리는 중입니다"
+            action_desc = "S값 조건은 도달했으나 아직 거래량이 붙지 않았거나 급락 중이므로 🟠 장전 상태로 대기하세요."
             badge_color = "#E65100"
         elif "매수완료/잠금" in cur_sig:
             action_title = f"{cur_sig} ➔ 해당 차수 매수 완료! 중복 매수 금지"
@@ -418,20 +435,20 @@ if stock_code:
         c3.metric("현재 누적 투입 비중", s['invest_pct'])
         c4.metric("보호 중인 현금 비중", s['cash_pct'])
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 쌍바닥 저격 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 저격 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 8차부터 비중 증폭(15%, 34%, 45%) 및 '거래량 + 쌍바닥' 필터가 적용된 마스터 표입니다.")
+            st.caption("📈 전일 대비 거래량 증감에 따른 동적 컬러링(증가=붉은색 진하기, 감소=파란색 진하기)이 적용된 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
         with tab2:
-            st.markdown("##### 🎯 [공격형] 쌍바닥 & 거래량 동반 저격 매수 플랜")
+            st.markdown("##### 🎯 [공격형] 동적 거래량 필터 & 10단계 매수 플랜")
             guide_data = [
                 {"단계": "1~5차", "S값 조건": "S ≥ -20", "투입 비중": "0% (관망)", "전략": "얕은 조정 무시 ➔ 현금 100% 사수"},
                 {"단계": "6~7차", "S값 조건": "S ≤ -25 ~ -30", "투입 비중": "각 3%", "전략": "하락 초입 ➔ 가벼운 입질 (1회 잠금)"},
-                {"단계": "8차", "S값 조건": "S ≤ -35", "투입 비중": "15%", "전략": "🔥 **[화력 증폭]** 쌍바닥 지지 + 거래량 폭증 시 격발"},
-                {"단계": "9차", "S값 조건": "S ≤ -45", "투입 비중": "34%", "전략": "🚨 **[본격 승부수]** 대규모 투매 쌍바닥에서 굵직하게 투하"},
+                {"단계": "8차", "S값 조건": "S ≤ -35", "투입 비중": "15%", "전략": "🔥 **[화력 증폭]** 거래량 유입 또는 하락 진정 시 격발"},
+                {"단계": "9차", "S값 조건": "S ≤ -45", "투입 비중": "34%", "전략": "🚨 **[본격 승부수]** 패닉셀 구간 거래량 터질 때 굵직하게 투하"},
                 {"단계": "10차", "S값 조건": "S ≤ -60", "투입 비중": "45%", "전략": "🔴 **[최후 방어]** 극단적 바닥 -60 구간 잔여 현금 올인"},
             ]
             st.dataframe(pd.DataFrame(guide_data), use_container_width=True)
@@ -479,7 +496,7 @@ if stock_code:
                     with cols[4]:
                         disp_name = item["confirmed_name"] if item["confirmed_name"] else "종목 미조회"
                         st.markdown(f"<div style='font-size: 0.75rem; color: #555; margin-bottom: 1px;'><b>{disp_name}</b></div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='font-size: 1.0rem; font-weight: bold; color: #D32F2F;>{live_curr_price:,}원</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size: 1.0rem; font-weight: bold; color: #D32F2F;'>{live_curr_price:,}원</div>", unsafe_allow_html=True)
 
                     with cols[5]:
                         st.markdown("<div style='margin-top: 22px;'></div>", unsafe_allow_html=True)
