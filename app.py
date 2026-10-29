@@ -23,7 +23,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (4~7차 핵심 구간 집중)")
+st.subheader("📈 간편 교대 매매 시스템 (4~7차 핵심 집중 & 1~3차 접기 기능)")
 
 # 네이버 금융 일별 시세 크롤링 함수 (개별 종목 및 지수 공용)
 @st.cache_data(ttl=3600)
@@ -330,19 +330,25 @@ if stock_code:
         current_s_val = s['S']
         cur_sig = s['current_signal']
         
-        # 🔥 실시간 단계별 도달 목표가 계산 (4~7차 핵심 구간만 집중 추출)
         max_mn_val = s.get('max_mn', 0)
         min_pq_val = s.get('min_pq', 0)
         
-        stages_info_core = [
+        # 🔥 전체 1~7차 목표가 계산 (1~3차는 접기 안에 포함용)
+        all_stages_info = [
+            (1, -25, "1차"), (2, -30, "2차"), (3, -35, "3차"),
             (4, -42, "4차"), (5, -49, "5차"), (6, -52, "6차"), (7, -55, "7차(바닥)")
         ]
         
-        target_prices_html = []
+        target_prices_core = []
+        target_prices_all = []
         if max_mn_val > 0 and min_pq_val > 0:
-            for stg, s_tgt, name in stages_info_core:
+            for stg, s_tgt, name in all_stages_info:
                 tp = r10(max_mn_val + (s_tgt * min_pq_val) / 100.0)
-                target_prices_html.append(f"<b>{name}</b>: <span style='color:#D32F2F;'>{tp:,}원 이하</span> (S≤{s_tgt})")
+                txt = f"<b>{name}</b>: <span style='color:#D32F2F;'>{tp:,}원 이하</span> (S≤{s_tgt})"
+                if stg >= 4:
+                    target_prices_core.append(txt)
+                else:
+                    target_prices_all.append(txt)
 
         if "진입 구간" in cur_sig:
             action_title = f"🔴 [{cur_sig}] ➔ 즉발 진입 구간 도달!"
@@ -366,12 +372,12 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 🔥 4~7차 핵심 지정가 세팅 가이드 박스
-        if target_prices_html:
+        # 🔥 4~7차 핵심 지정가 세팅 가이드 박스 (상단 고정 노출)
+        if target_prices_core:
             st.markdown(f"""
             <div style="background-color: #FFF3E0; border: 1px solid #FFB74D; padding: 10px; border-radius: 8px; margin-bottom: 12px; font-size: 0.85rem; color: #333; line-height: 1.4;">
                 <b>🎯 [4~7차 핵심 지정가 세팅 가이드] 다음 영업일 주요 도달 목표가</b><br>
-                {' | '.join(target_prices_html)}
+                {' | '.join(target_prices_core)}
             </div>
             """, unsafe_allow_html=True)
 
@@ -381,7 +387,7 @@ if stock_code:
         c3.metric("코스피 지수", f"{kospi_val:,}", f"{kospi_chg:+.2f}%")
         c4.metric("코스닥 지수", f"{kosdaq_val:,}", f"{kosdaq_chg:+.2f}%")
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 4~7차 핵심 가이드 & 자동금액", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 핵심 가이드 & 자동금액", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
             st.caption("📈 S값 조건 도달 당일 즉발 신호가 발동되는 실전 마스터 표입니다.")
@@ -392,7 +398,6 @@ if stock_code:
             st.markdown("##### 🎯 [4~7차 핵심 매수 구간 & 자동금액 계산기]")
             total_seed = st.number_input("💰 총 투자 예정 금액 (원)", min_value=100000, max_value=10000000000, value=30000000, step=1000000, format="%d")
 
-            # 4~7차 핵심 구간만 집중 압축
             core_rows = [
                 {"단계": "🟠 4차 진입 구간", "조건": "S ≤ -42", "비중": 0.07, "가이드": "공포 진입 ➔ 7% 비중 확대"},
                 {"단계": "🟠 5차 진입 구간", "조건": "S ≤ -49", "비중": 0.07, "가이드": "깊은 공포 ➔ 7% 추가 비중"},
@@ -412,6 +417,28 @@ if stock_code:
                 })
 
             st.dataframe(pd.DataFrame(calc_data), use_container_width=True)
+
+            # 🔥 1~3차 구간은 필요할 때만 펼쳐볼 수 있도록 Expander(접기)로 숨김 처리
+            with st.expander("🔍 [참고용] 1~3차 입질 구간 및 목표가 보기 (클릭하여 펼치기)"):
+                if target_prices_all:
+                    st.markdown(f"<div style='font-size: 0.85rem; margin-bottom: 8px;'>{' | '.join(target_prices_all)}</div>", unsafe_allow_html=True)
+                
+                intro_rows = [
+                    {"단계": "🟡 1차 진입 구간", "조건": "S ≤ -25", "비중": 0.03, "가이드": "하락 초입 ➔ 3% 입질 매수"},
+                    {"단계": "🟡 2차 진입 구간", "조건": "S ≤ -30", "비중": 0.03, "가이드": "하락 진행 ➔ 3% 입질 매수"},
+                    {"단계": "🟡 3차 진입 구간", "조건": "S ≤ -35", "비중": 0.03, "가이드": "하락 심화 ➔ 3% 입질 매수"},
+                ]
+                intro_calc_data = []
+                for row in intro_rows:
+                    amt = int(total_seed * row["비중"])
+                    intro_calc_data.append({
+                        "매수 단계": row["단계"],
+                        "S값 조건": row["조건"],
+                        "투입 비중": f"{int(row['비중']*100)}%",
+                        "자동 계산 투입금액": f"{amt:,}원",
+                        "행동 가이드": row["가이드"]
+                    })
+                st.dataframe(pd.DataFrame(intro_calc_data), use_container_width=True)
 
         with tab3:
             st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기")
