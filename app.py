@@ -195,7 +195,7 @@ def style_table(df_target, df_full):
                     styles[idx] = 'background-color: #FFF3E0; color: #E65100; font-weight: 900; border: 1px solid #FFB74D; white-space: nowrap;'
                 elif val_str == '추가매수금지':
                     styles[idx] = 'background-color: #ECEFF1; color: #455A64; font-weight: bold; white-space: nowrap;'
-                elif '매도 추천' in val_str:
+                elif val_str == '매도 추천':
                     styles[idx] = 'background-color: #1976D2; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
                 elif val_str == '손실중(버티기)':
                     styles[idx] = 'background-color: #E8F5E9; color: #2E7D32; font-weight: bold; white-space: nowrap;'
@@ -322,7 +322,6 @@ def calculate_indicator_sheet(df_raw):
                             avg_buy_price = (avg_buy_price * old_ratio + p * added_weight) / cum_invest_ratio
 
                     last_buy_index = i
-                    # 🔥 7차는 강력매수 추천, 1~6차는 X차 매수 추천으로 표시
                     if target_stage == 7:
                         sig = "7차 강력매수 추천"
                     else:
@@ -389,7 +388,7 @@ if stock_code:
         cur_sig = s['current_signal']
         
         if "매수 추천" in cur_sig:
-            action_title = f"🔴 [{cur_sig}] ➔ 거래량 유입 및 지지 확인 완료! 오늘 매수를 실행하세요"
+            action_title = f"🔴 [{cur_sig}] ➔ 거래량 유입 및 지지 확인 완료! 오늘 매수를 진행하세요"
             action_desc = "하락 진정세와 함께 거래량이 유입되었습니다. 정해진 비중만큼 과감하게 매수를 진행하세요!"
             badge_color = "#D32F2F"
         elif cur_sig == "대기":
@@ -431,7 +430,7 @@ if stock_code:
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 새로운 7단계 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 [X차 매수 추천], [매도 추천] 등 직관적인 표준 용어가 적용된 마스터 표입니다.")
+            st.caption("📈 [X차 매수 추천], [매도 추천]으로 간소화되어 한눈에 쏙 들어오는 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
