@@ -24,7 +24,7 @@ st.markdown("""
 
 st.subheader("📈 간편 교대 매매 시스템 (실전 포트폴리오 분석기)")
 
-# 네이버 금융 일별 시세 크롤링 함수 (종목명 추출 및 현재가 룩업 겸용)
+# 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
 def get_naver_stock_data(code, count=1250):
     url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count={count}&requestType=0"
@@ -35,8 +35,6 @@ def get_naver_stock_data(code, count=1250):
         
         from xml.etree import ElementTree as ET
         root = ET.fromstring(response.text)
-        
-        # 네이버 XML에서 종목명(epsfld 등) 추출 시도
         item_list = root.findall('.//item')
         
         data = []
@@ -63,7 +61,7 @@ def get_naver_stock_data(code, count=1250):
     except Exception as e:
         return None, None
 
-# 주요 종목 빠른 매핑 사전 (코드 및 이름)
+# 주요 종목 빠른 매핑 사전
 name_to_code = {
     "삼성전자": "005930",
     "KODEX 코스닥150레버리지": "233740",
@@ -388,17 +386,17 @@ if stock_code:
             st.dataframe(pd.DataFrame(sell_guide_data), use_container_width=True)
 
         with tab3:
-            st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기 (코드/종목명 자동 연동)")
-            st.caption("보유 종목 칸에 **종목명**이나 **6자리 종목코드(예: 005930)**를 입력하시면, 앱이 자동으로 종목명을 완성하고 네이버 금융에서 **실시간 현재가**를 가져와 총 손익을 계산해 줍니다.")
+            st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기 (조회 버튼 적용)")
+            st.caption("보유 종목 칸에 **종목명**이나 **6자리 코드**를 입력하고 **[🔍 종목 조회]** 버튼을 누르시면, 해당 종목의 정식 이름과 실시간 현재가가 확정 반영되어 총 손익이 계산됩니다.")
 
             if 'my_portfolio_items' not in st.session_state:
                 st.session_state.my_portfolio_items = [
-                    {"id": 1, "name": "233740", "qty": 5717, "avg_price": 5330}
+                    {"id": 1, "input_val": "233740", "confirmed_code": "233740", "confirmed_name": "KODEX 코스닥150레버리지", "qty": 5717, "avg_price": 5330}
                 ]
 
             if st.button("➕ 보유 종목 추가하기"):
                 new_id = max([item["id"] for item in st.session_state.my_portfolio_items], default=0) + 1
-                st.session_state.my_portfolio_items.append({"id": new_id, "name": "", "qty": 0, "avg_price": 0})
+                st.session_state.my_portfolio_items.append({"id": new_id, "input_val": "", "confirmed_code": "233740", "confirmed_name": "", "qty": 0, "avg_price": 0})
                 st.rerun()
 
             total_invested_all = 0
@@ -409,26 +407,33 @@ if stock_code:
                 st.info("등록된 보유 종목이 없습니다. [➕ 보유 종목 추가하기] 버튼을 눌러 종목을 추가해 주세요.")
             else:
                 for idx, item in enumerate(st.session_state.my_portfolio_items):
-                    cols = st.columns([1.8, 1, 1, 1.2, 0.6])
+                    cols = st.columns([1.6, 0.9, 0.9, 0.9, 1.1, 0.5])
                     with cols[0]:
-                        item["name"] = st.text_input(f"종목명 또는 코드 {idx+1}", value=item["name"], placeholder="예: 삼성전자 또는 005930", key=f"mp_name_{item['id']}")
+                        item["input_val"] = st.text_input(f"종목명/코드 {idx+1}", value=item["input_val"], placeholder="예: 005930", key=f"mp_input_{item['id']}")
                     with cols[1]:
-                        item["qty"] = st.number_input(f"수량 {idx+1}", min_value=0, value=item["qty"], step=1, key=f"mp_qty_{item['id']}")
+                        st.markdown("<div style='margin-top: 26px;'></div>", unsafe_allow_html=True)
+                        if st.button("🔍 조회", key=f"btn_search_{item['id']}"):
+                            c, n = resolve_code_and_name(item["input_val"])
+                            item["confirmed_code"] = c
+                            item["confirmed_name"] = n
+                            st.rerun()
                     with cols[2]:
+                        item["qty"] = st.number_input(f"수량 {idx+1}", min_value=0, value=item["qty"], step=1, key=f"mp_qty_{item['id']}")
+                    with cols[3]:
                         item["avg_price"] = st.number_input(f"평단가 {idx+1}", min_value=0, value=item["avg_price"], step=10, key=f"mp_price_{item['id']}")
                     
-                    # 입력된 종목명/코드를 정규화하여 코드와 정식 종목명을 자동으로 추출
-                    resolved_code, resolved_name = resolve_code_and_name(item["name"])
-                    live_df, _ = get_naver_stock_data(resolved_code, count=5)
+                    # 확정된 종목코드로 네이버 금융에서 실시간 현재가 조회
+                    live_df, _ = get_naver_stock_data(item["confirmed_code"], count=5)
                     live_curr_price = int(live_df['Close'].iloc[-1]) if live_df is not None and not live_df.empty else item["avg_price"]
 
-                    with cols[3]:
-                        st.markdown(f"<div style='font-size: 0.8rem; color: #666; margin-bottom: 2px;'><b>{resolved_name}</b></div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='font-size: 1.05rem; font-weight: bold; color: #D32F2F;'>{live_curr_price:,}원</div>", unsafe_allow_html=True)
-
                     with cols[4]:
+                        disp_name = item["confirmed_name"] if item["confirmed_name"] else "종목 미조회"
+                        st.markdown(f"<div style='font-size: 0.75rem; color: #555; margin-bottom: 1px;'><b>{disp_name}</b></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size: 1.0rem; font-weight: bold; color: #D32F2F;'>{live_curr_price:,}원</div>", unsafe_allow_html=True)
+
+                    with cols[5]:
                         st.markdown("<div style='margin-top: 22px;'></div>", unsafe_allow_html=True)
-                        if st.button("❌ 삭제", key=f"del_mp_{item['id']}"):
+                        if st.button("❌", key=f"del_mp_{item['id']}"):
                             items_to_delete.append(item)
 
                     inv_amt = item["qty"] * item["avg_price"]
