@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (지표별 동적 농도 시각화 적용)")
+st.subheader("📈 간편 교대 매매 시스템 ([매수]·[매도] 직관적 표준화)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -120,7 +120,6 @@ def r10(val):
     return int(np.floor(val / 10.0 + 0.5) * 10)
 
 def style_table(df_target, df_full):
-    # 컬럼별 최대/최소값 사전 계산 (동적 채도 계산용)
     cols_grad = ['MM', 'PM', 'LM', 'RM', 'S']
     col_bounds = {}
     for c in cols_grad:
@@ -138,7 +137,6 @@ def style_table(df_target, df_full):
             if col_name in ['종가(B)', '등락률(C)'] and prev_close is not None:
                 styles[idx] = 'color: #D32F2F; font-weight: bold;' if curr_close > prev_close else ('color: #1976D2; font-weight: bold;' if curr_close < prev_close else 'color: #111111;')
             
-            # 🔥 1. 거래량(E) 전일 대비 증감 동적 진하기 시각화
             elif col_name == '거래량(E)':
                 try:
                     curr_vol = float(val)
@@ -156,7 +154,6 @@ def style_table(df_target, df_full):
                 except:
                     pass
 
-            # 🔥 2. S값 동적 진하기 시각화 (양수면 붉은색 농도, 음수면 푸른색 농도)
             elif col_name == 'S':
                 try:
                     s_num = float(val)
@@ -173,7 +170,6 @@ def style_table(df_target, df_full):
                 except:
                     pass
 
-            # 🔥 3. MM, PM, LM, RM 지표 컬럼 동적 진하기 시각화
             elif col_name in ['MM', 'PM', 'LM', 'RM']:
                 try:
                     v = float(val)
@@ -181,12 +177,10 @@ def style_table(df_target, df_full):
                     ratio = 0.0 if vmax == vmin else max(0.0, min(1.0, (v - vmin) / (vmax - vmin)))
                     
                     if col_name == 'PM' and v < 0:
-                        # 하락률(PM) 음수는 푸른색 농도로 깊게 표시
                         ratio_neg = min(1.0, abs(v) / 50.0)
                         r = int(240 - ratio_neg * 150); g = int(240 - ratio_neg * 150); b = 255
                         styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: bold; padding: 2px 6px; border-radius: 6px;'
                     else:
-                        # 일반 수치 그라데이션 (값이 클수록 진한 붉은/오렌지 톤)
                         r = 255; g = int(245 - ratio * 170); b = int(245 - ratio * 170)
                         styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.5 else "#222222"}; font-weight: {"bold" if ratio > 0.4 else "normal"}; padding: 2px 6px; border-radius: 6px;'
                 except:
@@ -194,15 +188,15 @@ def style_table(df_target, df_full):
 
             elif col_name == '매수신호(레버리지/인버스)':
                 val_str = str(val)
-                if '격발!' in val_str:
+                if '매수실행' in val_str:
                     styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
-                elif '장전/대기' in val_str:
+                elif '대기' in val_str:
                     styles[idx] = 'background-color: #FFF3E0; color: #E65100; font-weight: 900; border: 1px solid #FFB74D;'
-                elif '매수완료/잠금' in val_str:
+                elif '매수완료(잠금)' in val_str:
                     styles[idx] = 'background-color: #ECEFF1; color: #455A64; font-weight: bold;'
-                elif '입질 실행' in val_str:
+                elif '입질매수' in val_str:
                     styles[idx] = 'background-color: #FF8F00; color: #FFFFFF; font-weight: bold;'
-                elif '익절' in val_str or '현금화' in val_str:
+                elif '매도' in val_str:
                     styles[idx] = 'background-color: #1976D2; color: #FFFFFF; font-weight: bold;'
         return styles
 
@@ -288,12 +282,12 @@ def calculate_indicator_sheet(df_raw):
 
         if s_val >= 0:
             if cum_invest_ratio > 0 or len(executed_buy_stages) > 0:
-                sig = "🔵 [최종 익절] 전량 현금화 완료"
+                sig = "🔵 [전량 매도(익절)] 현금화 완료"
                 executed_buy_stages.clear()
                 armed_stage = 0
                 cum_invest_ratio = 0.0
             else:
-                sig = "🟢 [관망 대기] 안전 구간 (현금 100%)"
+                sig = "🟢 [관망] 현금 100% 보유"
         else:
             target_buy_stage = 0
             if s_val <= -60 and pm <= -35:
@@ -321,22 +315,22 @@ def calculate_indicator_sheet(df_raw):
                             cum_invest_ratio = min(1.0, cum_invest_ratio + stage_weights[stg])
                     pct_int = int(round(stage_weights[armed_stage] * 100))
                     cum_int = int(round(cum_invest_ratio * 100))
-                    sig = f"🔴 [{armed_stage}차 격발!] 거래량 유입 ➔ {pct_int}% 투하 (누적 {cum_int}%)"
+                    sig = f"🔴 [{armed_stage}차 매수실행] {pct_int}% 매수 (누적 {cum_int}%)"
                     armed_stage = 0
                     executed_sell_stages.clear()
                 else:
-                    sig = f"🟠 [{armed_stage}차 장전/대기] 거래량 & 반등 대기 중"
+                    sig = f"🟠 [{armed_stage}차 대기] 거래량 및 반등 대기"
 
             elif target_buy_stage in [6, 7] and target_buy_stage not in executed_buy_stages:
                 if not is_light_trigger:
-                    sig = f"🟠 [{target_buy_stage}차 장전/대기] 급락 중 ➔ 대기"
+                    sig = f"🟠 [{target_buy_stage}차 대기] 급락 진정 대기"
                 else:
                     for stg in range(6, target_buy_stage + 1):
                         if stg not in executed_buy_stages:
                             executed_buy_stages.add(stg)
                             cum_invest_ratio = min(1.0, cum_invest_ratio + stage_weights[stg])
                     cum_int = int(round(cum_invest_ratio * 100))
-                    sig = f"🟡 [{target_buy_stage}차 입질 실행] 3% 매수 (누적 {cum_int}%)"
+                    sig = f"🟡 [{target_buy_stage}차 입질매수] 3% 매수 (누적 {cum_int}%)"
                     executed_sell_stages.clear()
 
             else:
@@ -345,21 +339,21 @@ def calculate_indicator_sheet(df_raw):
                     if s_val >= -5 and 4 not in executed_sell_stages:
                         executed_sell_stages.add(4)
                         cum_invest_ratio = min(cum_invest_ratio, 0.10)
-                        sig = "🔵 [4차 익절 실행] 잔여 비중 10% 유지"
+                        sig = "🔵 [4차 매도(익절)] 잔여 10% 유지"
                     elif s_val >= -15 and 3 not in executed_sell_stages:
                         executed_sell_stages.add(3)
                         cum_invest_ratio = min(cum_invest_ratio, 0.20)
-                        sig = "🔵 [3차 익절 실행] 일부 수익 실현"
+                        sig = "🔵 [3차 매도(익절)] 일부 수익실현"
                     else:
                         next_stg = max_done + 1
                         next_s = {-6: -25, 7: -30, 8: -35, 9: -45, 10: -60}.get(next_stg, -60)
                         cum_int = int(round(cum_invest_ratio * 100))
                         if max_done < 10:
-                            sig = f"🛡️ [{max_done}차 매수완료/잠금] {next_stg}차(S≤{next_s}) 전까지 대기 (보유 {cum_int}%)"
+                            sig = f"🛡️ [{max_done}차 매수완료(잠금)] {next_stg}차(S≤{next_s}) 전 대기 (보유 {cum_int}%)"
                         else:
-                            sig = f"🛡️ [10차 매수완료/잠금] 모든 매수 종료 ➔ 반등 대기 (보유 {cum_int}%)"
+                            sig = f"🛡️ [10차 매수완료(잠금)] 매수종료 ➔ 반등 대기 (보유 {cum_int}%)"
                 else:
-                    sig = "🟢 [1~5차 관망] 얕은 조정 구간 ➔ 현금 사수"
+                    sig = "🟢 [관망] 현금 100% 보유"
 
         invest_pct = f"레버리지 {int(round(cum_invest_ratio * 100))}%"
         cash_pct = f"현금 {100 - int(round(cum_invest_ratio * 100))}%"
@@ -402,29 +396,29 @@ if stock_code:
         current_s_val = s['S']
         cur_sig = s['current_signal']
         
-        if "격발!" in cur_sig:
-            action_title = f"{cur_sig} ➔ 거래량 유입 및 지지 확인 완료! 오늘 매수 실행하세요"
-            action_desc = "하락 진정세와 함께 거래량이 유입되었습니다. 배정된 비중만큼 과감하게 매수를 실행하세요!"
+        if "매수실행" in cur_sig:
+            action_title = f"{cur_sig} ➔ 거래량 유입 및 지지 확인 완료! 오늘 매수를 실행하세요"
+            action_desc = "하락 진정세와 함께 거래량이 유입되었습니다. 정해진 비중만큼 과감하게 매수를 진행하세요!"
             badge_color = "#D32F2F"
-        elif "장전/대기" in cur_sig:
+        elif "대기" in cur_sig:
             action_title = f"{cur_sig} ➔ 거래량 유입 및 하락 진정을 기다리는 중입니다"
-            action_desc = "S값 조건은 도달했으나 아직 거래량이 붙지 않았거나 급락 중이므로 🟠 장전 상태로 대기하세요."
+            action_desc = "S값 조건은 도달했으나 아직 거래량이 붙지 않았거나 급락 중이므로 매수를 보류하고 대기하세요."
             badge_color = "#E65100"
-        elif "매수완료/잠금" in cur_sig:
-            action_title = f"{cur_sig} ➔ 해당 차수 매수 완료! 중복 매수 금지"
-            action_desc = "이미 현 단계 매수를 마쳤습니다. 다음 차수 조건까지 내려가기 전에는 추가로 사지 마시고 관망하세요."
+        elif "매수완료(잠금)" in cur_sig:
+            action_title = f"{cur_sig} ➔ 해당 단계 매수 완료! 중복 매수 금지"
+            action_desc = "이미 현 단계 매수를 마쳤습니다. 다음 조건까지 내려가기 전에는 추가 매수를 금지하고 관망하세요."
             badge_color = "#455A64"
-        elif "입질 실행" in cur_sig:
-            action_title = f"{cur_sig} ➔ 6~7차 가벼운 입질(각 3%) 구간입니다!"
+        elif "입질매수" in cur_sig:
+            action_title = f"{cur_sig} ➔ 6~7차 가벼운 입질매수(각 3%) 구간입니다!"
             action_desc = "하락 초입이므로 가볍게 3%만 담고 다음 시그널을 대기합니다."
             badge_color = "#FF8F00"
-        elif "익절" in cur_sig or "현금화" in cur_sig:
-            action_title = f"{cur_sig} ➔ 상승 회복 구간입니다. 수익을 챙기세요!"
-            action_desc = "바닥을 탈출해 S값이 회복 중입니다. 원칙에 따라 분할 익절하여 현금을 확보하세요."
+        elif "매도" in cur_sig:
+            action_title = f"{cur_sig} ➔ 상승 회복 구간입니다. 수익을 실현하세요!"
+            action_desc = "바닥을 탈출해 S값이 회복 중입니다. 원칙에 따라 분할 매도하여 현금을 확보하세요."
             badge_color = "#1976D2"
         else:
             action_title = f"{cur_sig} ➔ 1~5차 얕은 조정 구간입니다."
-            action_desc = "어설픈 하락이나 요동(휩쏘) 장세에서는 지갑을 열지 마시고 현금 100%를 유지하세요."
+            action_desc = "어설픈 하락이나 요동(휩쏘) 장세에서는 매수를 자제하고 현금 100%를 유지하세요."
             badge_color = "#2E7D32"
 
         st.markdown(f"""
@@ -442,19 +436,21 @@ if stock_code:
         c3.metric("현재 누적 투입 비중", s['invest_pct'])
         c4.metric("보호 중인 현금 비중", s['cash_pct'])
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 지표 시각화 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 매매 표준 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 거래량 및 MM, PM, LM, S, RM 모든 주요 지표에 동적 농도(컬러 그라데이션)가 적용된 마스터 표입니다.")
+            st.caption("📈 [매수실행], [입질매수], [매도], [대기], [잠금] 등 표준화된 용어가 적용된 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
         with tab2:
-            st.markdown("##### 🎨 표 가독성 및 컬러 시각화 규칙 안내")
+            st.markdown("##### 🎯 [실전 표준] 매수·매도 교대 매매 플랜")
             guide_data = [
-                {"항목": "거래량 (E)", "시각화 방식": "전일 대비 증가 = 붉은색 농도 / 감소 = 파란색 농도 (변동폭이 클수록 진함)"},
-                {"항목": "S값 (S)", "시각화 방식": "양수(+) = 붉은색 진하기 / 음수(-) = 푸른색 진하기 (절대값이 클수록 짙음)"},
-                {"항목": "PM / LM / MM / RM", "시각화 방식": "수치 크기에 따른 동적 채도 적용 (하락폭 PM이 마이너스일 때 푸른색 농도 강조)"},
+                {"단계": "1~5차", "S값 조건": "S ≥ -20", "비중": "0% (관망)", "매매 가이드": "얕은 조정 무시 ➔ 현금 100% 보유"},
+                {"단계": "6~7차", "S값 조건": "S ≤ -25 ~ -30", "비중": "각 3%", "매매 가이드": "하락 초입 ➔ 3% 가벼운 입질매수 (1회 잠금)"},
+                {"단계": "8차", "S값 조건": "S ≤ -35", "비중": "15%", "매매 가이드": "🔥 **[화력 증폭]** 거래량 유입 및 하락 진정 시 매수실행"},
+                {"단계": "9차", "S값 조건": "S ≤ -45", "비중": "34%", "매매 가이드": "🚨 **[본격 승부수]** 패닉셀 구간 거래량 터질 때 매수실행"},
+                {"단계": "10차", "S값 조건": "S ≤ -60", "비중": "45%", "매매 가이드": "🔴 **[최후 방어]** 극단적 바닥 -60 구간 잔여 현금 전액 매수실행"},
             ]
             st.dataframe(pd.DataFrame(guide_data), use_container_width=True)
 
