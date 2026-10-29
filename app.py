@@ -13,16 +13,18 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 모바일 가독성 및 태그(Badge) 스타일링 CSS
+# 모바일 가독성 및 표 칸 넓이 최적화 CSS
 st.markdown("""
 <style>
     .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
     div[data-testid="stMetricValue"] { font-size: 1.25rem; font-weight: 700; }
     div[data-testid="stMetricLabel"] { font-size: 0.85rem; }
+    /* 데이터프레임 셀 패딩 및 폰트 크기 최적화로 숫자 잘림 방지 */
+    table dataframe, th, td { font-size: 0.85rem !important; padding: 4px 6px !important; }
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (평단가 검증형 실전 매도 엔진)")
+st.subheader("📈 간편 교대 매매 시스템 (거래량 가독성 최적화 버전)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=3600)
@@ -146,11 +148,11 @@ def style_table(df_target, df_full):
                     if vol_diff_ratio >= 0:
                         ratio = min(1.0, vol_diff_ratio / 1.0)
                         r = 255; g = int(240 - ratio * 180); b = int(240 - ratio * 180)
-                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.3 else "#222222"}; font-weight: bold;'
+                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.3 else "#222222"}; font-weight: bold; white-space: nowrap;'
                     else:
                         ratio = min(1.0, abs(vol_diff_ratio) / 0.5)
                         r = int(240 - ratio * 180); g = int(240 - ratio * 180); b = 255
-                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#0D47A1" if ratio > 0.3 else "#222222"}; font-weight: bold;'
+                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#0D47A1" if ratio > 0.3 else "#222222"}; font-weight: bold; white-space: nowrap;'
                 except:
                     pass
 
@@ -238,7 +240,7 @@ def calculate_indicator_sheet(df_raw):
     executed_sell_stages = set()
     armed_stage = 0
     cum_invest_ratio = 0.0
-    avg_buy_price = 0.0  # 🔥 평단가 추적 변수
+    avg_buy_price = 0.0
 
     stage_weights = {6: 0.03, 7: 0.03, 8: 0.15, 9: 0.34, 10: 0.45}
 
@@ -366,7 +368,6 @@ def calculate_indicator_sheet(df_raw):
                     max_done = max(executed_buy_stages)
                     is_in_profit = (p > avg_buy_price) if avg_buy_price > 0 else False
 
-                    # 🔥 평단가 대비 진짜 수익권일 때만 매도(익절) 실행
                     if s_val >= -5 and 4 not in executed_sell_stages and is_in_profit:
                         executed_sell_stages.add(4)
                         cum_invest_ratio = min(cum_invest_ratio, 0.10)
@@ -476,7 +477,7 @@ if stock_code:
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 평단가 검증 가이드", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 평단가 대비 실제 수익권일 때만 [매도실행]이 뜨고, 손실 중일 때는 [보유중(손실홀딩)]으로 방어하는 정교한 마스터 표입니다.")
+            st.caption("📈 거래량 셀이 줄 바꿈 없이 한 줄로 깔끔하게 보이도록 모바일 가독성이 최적화된 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
