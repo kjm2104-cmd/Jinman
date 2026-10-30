@@ -47,9 +47,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 매매 시스템 ")
+st.subheader("📈  매매 시스템 ")
 
-# 네이버 금융 일별 시세 크롤링 함수
+# 네이버 금융 일별 시세 크롤링 함수 (데이터 정제 & 중복 제거 보강)
 @st.cache_data(ttl=300)
 def get_naver_stock_data(code, count=1500):
     clean_code = str(code).strip()
@@ -84,12 +84,13 @@ def get_naver_stock_data(code, count=1500):
             
         df = pd.DataFrame(data)
         df['Date'] = pd.to_datetime(df['Date'])
+        df = df.drop_duplicates(subset=['Date']).sort_values('Date', ascending=True)
         df.set_index('Date', inplace=True)
         return df, clean_code
     except Exception:
         return None, None
 
-# 종목별 외국인/기관 매매동향 크롤링 함수 (안정화 버전)
+# 종목별 외국인/기관 매매동향 크롤링 함수
 @st.cache_data(ttl=300)
 def get_investor_trend(code):
     clean_code = str(code).strip()
@@ -208,7 +209,7 @@ with st.form(key="search_form"):
         user_input = st.text_input(
             "🔍 조회할 메인 종목 또는 종목코드 입력",
             value="233740",
-            placeholder="예: 삼성전자, 피엔티 또는 233740"
+            placeholder="예: 삼성전자, 또는 233740"
         ).strip()
     with col_in2:
         years_back = st.selectbox("표시 기간 (엑셀 기본: 2년 고정)", options=[1, 2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
@@ -224,7 +225,7 @@ def r10(val):
 def trunc_int(val):
     return int(np.trunc(val))
 
-# 표 스타일러 함수 (가운데 정렬 + 컴팩트 패딩)
+# 표 스타일러 함수 (등락률 부호 직결 판별로 색상 꼬임 완벽 방지)
 def style_table(df_target, df_full):
     cols_grad = ['MM', 'PM', 'LM', 'RM', 'S']
     col_bounds = {}
@@ -235,17 +236,18 @@ def style_table(df_target, df_full):
 
     def color_styler(row_idx, row):
         styles = ['text-align: center;'] * len(row)
-        curr_close = row.get('종가(B)', 0)
-        prev_close = df_full.iloc[row.name - 1].get('종가(B)', 0) if row.name > 0 else None
+        chg_str = str(row.get('등락률(C)', '0%')).strip()
+        is_up = '+' in chg_str
+        is_down = '-' in chg_str
 
         for idx, col_name in enumerate(row.index):
             val = row[col_name]
             base_style = 'text-align: center;'
 
-            if col_name in ['종가(B)', '등락률(C)'] and prev_close is not None:
-                if curr_close > prev_close:
+            if col_name in ['종가(B)', '등락률(C)']:
+                if is_up:
                     styles[idx] = f'{base_style} color: #D32F2F; font-weight: bold;'
-                elif curr_close < prev_close:
+                elif is_down:
                     styles[idx] = f'{base_style} color: #1976D2; font-weight: bold;'
                 else:
                     styles[idx] = f'{base_style} color: #111111;'
@@ -253,7 +255,8 @@ def style_table(df_target, df_full):
             elif col_name == '거래량(F)':
                 try:
                     curr_vol = float(val)
-                    prev_vol = float(df_full.iloc[row.name - 1]['거래량(F)']) if row.name > 0 else curr_vol
+                    row_pos = row.name
+                    prev_vol = float(df_full.loc[row_pos - 1, '거래량(F)']) if (row_pos - 1) in df_full.index else curr_vol
                     vol_diff_ratio = (curr_vol - prev_vol) / prev_vol if prev_vol > 0 else 0.0
                     
                     if vol_diff_ratio >= 0:
@@ -332,6 +335,9 @@ def calculate_indicator_sheet(df_raw):
     df = df_raw.copy().reset_index()
     closes = pd.to_numeric(df['Close'], errors='coerce').ffill().values
     vols = pd.to_numeric(df['Volume'], errors='coerce').fillna(0).values
+    opens = pd.to_numeric(df['Open'], errors='coerce').ffill().values
+    highs = pd.to_numeric(df['High'], errors='coerce').ffill().values
+    lows = pd.to_numeric(df['Low'], errors='coerce').ffill().values
     dates = pd.to_datetime(df['Date']).values
     n = len(closes)
 
@@ -499,6 +505,9 @@ def calculate_indicator_sheet(df_raw):
 
     summary = {
         'B1': int(closes[-1]),
+        'Open': int(opens[-1]),
+        'High': int(highs[-1]),
+        'Low': int(lows[-1]),
         'C1': int(vols[-1]),
         'cur_chg': chg[-1] * 100,
         'vol_ratio': vol_ratio[-1],
@@ -649,12 +658,12 @@ if stock_code:
             )
 
         # -----------------------------
-        # TAB 2: 마감 브리핑 전용 탭 (수급 가독성 극대화 & 공시 카드 탑재)
+        # TAB 2: 마감 브리핑 전용 탭 (4가지 종합 고도화 반영)
         # -----------------------------
         with tab2:
             st.markdown(f"#### 📢 [{s['date']}] {stock_name} 장 마감 종합 브리핑")
 
-            # A. 🌐 전체 시장 종합 프리핑 (구체적 정밀 분석)
+            # 1. 🌐 전체 시장 종합 프리핑
             if kosdaq_chg <= -1.5:
                 mkt_stage = "🚨 [지수 급락 / 공포 심리 고조]"
                 mkt_color = "#D32F2F"
@@ -674,7 +683,7 @@ if stock_code:
 
             st.markdown(f"""
             <div class="brief-card" style="border-left: 5px solid {mkt_color};">
-                <div class="brief-title" style="color: {mkt_color};">🌐 전체 시장 종합 프리핑 (정밀 분석)</div>
+                <div class="brief-title" style="color: {mkt_color};">1. 전체 시장 종합 프리핑 (정밀 분석)</div>
                 <div style="font-size:0.88rem; color:#222; line-height:1.6;">
                     • <b>지수 현황</b>: 코스피 <b>{kospi_val:,}p</b> ({kospi_chg:+.2f}%) | 코스닥 <b>{kosdaq_val:,}p</b> ({kosdaq_chg:+.2f}%)<br>
                     • <b>시장 국면 판정</b>: <span style="font-weight:bold; color:{mkt_color};">{mkt_stage}</span><br>
@@ -685,10 +694,49 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # B. 👥 투자자별 매매동향 (수급 흐름을 직관적인 카드로 개선)
+            # 2. 🕯️ [신규 1번] 당일 캔들 형태 & 꼬리 분석 (바닥 반등 시그널)
+            o_p, h_p, l_p, c_p = s['Open'], s['High'], s['Low'], s['B1']
+            body_size = abs(c_p - o_p)
+            candle_range = max(1, h_p - l_p)
+            lower_shadow = min(o_p, c_p) - l_p
+            upper_shadow = h_p - max(o_p, c_p)
+
+            if lower_shadow / candle_range >= 0.45 and (lower_shadow >= body_size * 1.5):
+                candle_type = "🔨 [아래꼬리 망치형 / 저가 매수세 유입]"
+                candle_color = "#D32F2F"
+                candle_desc = "장중 급락 투매를 저가에서 강하게 받아내며 아래꼬리를 길게 달았습니다. <b>단기 바닥 지지력이 확인되는 반등 긍정 시그널</b>입니다."
+            elif c_p < o_p and (body_size / candle_range >= 0.65):
+                candle_type = "📉 [장대음봉 / 매도세 우위]"
+                candle_color = "#1976D2"
+                candle_desc = "시가 이후 장 마감까지 매도세가 지속되었습니다. 아직 하방 압력이 남아있으므로 <b>익일 추가 방어선 도달 여부를 차분히 대기</b>해야 합니다."
+            elif body_size / candle_range <= 0.2:
+                candle_type = "⚖️ [도지(팽이형) / 매수·매도 팽팽한 균형]"
+                candle_color = "#333333"
+                candle_desc = "시가와 종가가 거의 일치하며 방향성 탐색 국면입니다. <b>하락세가 진정되며 숨고르기</b>에 들어간 형태입니다."
+            elif c_p > o_p:
+                candle_type = "📈 [양봉 반등 / 매수 우위]"
+                candle_color = "#D32F2F"
+                candle_desc = "시가 대비 종가를 끌어올리며 양봉으로 마감했습니다. <b>단기 기술적 반등 흐름이 유효</b>합니다."
+            else:
+                candle_type = "단기 조정 캔들"
+                candle_color = "#555555"
+                candle_desc = "통상적인 박스권 잔파동 내에서 등락을 보였습니다."
+
+            st.markdown(f"""
+            <div class="brief-card">
+                <div class="brief-title">2. 🕯️ 당일 캔들 형태 & 꼬리 분석</div>
+                <div style="font-size:0.88rem; color:#222; line-height:1.6;">
+                    • <b>당일 시세</b>: 시가 {o_p:,}원 | 고가 {h_p:,}원 | 저가 {l_p:,}원 | <b>종가 {c_p:,}원</b><br>
+                    • <b>캔들 판정</b>: <span style="font-weight:bold; color:{candle_color};">{candle_type}</span><br>
+                    • <b>실전 해석</b>: {candle_desc}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 3. 👥 오늘 투자자별 매매동향
             st.markdown("""
             <div class="brief-card">
-                <div class="brief-title">👥 오늘 투자자별 매매동향 (수급 흐름)</div>
+                <div class="brief-title">3. 👥 투자자별 매매동향 (수급 흐름)</div>
             """, unsafe_allow_html=True)
 
             if investor_df is not None and not investor_df.empty:
@@ -729,12 +777,12 @@ if stock_code:
                 st.markdown("""
                 <div style="font-size:0.86rem; color:#555; line-height:1.5;">
                     • <b>수급 핵심 체크포인트</b>: 파동 저점 구간에서 <b>개인의 투매 물량을 외국인·기관이 양매수로 받아낼 때</b> 가장 신뢰도 높은 V자 바닥 반등이 형성됩니다.<br>
-                    • <i>(장 마감 후 네이버 금융 증권 거래소 확정 집계 데이터 연동 중)</i>
+                    • <i>(장 마감 후 네이버 금융 거래소 확정 집계 데이터 연동 중)</i>
                 </div>
                 """, unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # C. ⚡ 거래량 시그널 & 바닥 경보
+            # 4. ⚡ 거래량 시그널 & 바닥 경보
             vol_ratio_val = s['vol_ratio']
             if vol_ratio_val >= 1.5:
                 vol_badge = "🚨 [공포 투매 / 대량 손바뀜 발생]"
@@ -751,7 +799,7 @@ if stock_code:
 
             st.markdown(f"""
             <div class="brief-card">
-                <div class="brief-title">⚡ 거래량 시그널 & 바닥 경보</div>
+                <div class="brief-title">4. ⚡ 거래량 시그널 & 바닥 경보</div>
                 <div style="font-size:0.88rem; color:#222; line-height:1.6;">
                     • <b>오늘 거래량</b>: {s['C1']:,}주 (전일 대비 <b>{vol_ratio_val:.2f}배</b>)<br>
                     • <b>진단 결과</b>: <span style="color:{vol_color}; font-weight:bold;">{vol_badge}</span><br>
@@ -760,7 +808,7 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # D. 🎯 다음 목표가까지 남은 거리 (D-Day 카운트다운)
+            # 5. 🎯 다음 목표가까지 남은 거리 (D-Day 카운트다운)
             curr_p = s['B1']
             tp_3 = target_prices_dict.get(-40, 0)
             tp_4 = target_prices_dict.get(-55, 0)
@@ -771,7 +819,7 @@ if stock_code:
 
             st.markdown(f"""
             <div class="brief-card">
-                <div class="brief-title">🎯 다음 목표가까지 남은 거리 (D-Day 카운트다운)</div>
+                <div class="brief-title">5. 🎯 다음 목표가까지 남은 거리 (D-Day 카운트다운)</div>
                 <div style="font-size:0.88rem; color:#222; line-height:1.6;">
                     • <b>다음 3차 진입가 ({tp_3:,}원 / 예비 10%)까지</b>: 
                       <span style="color:{'#D32F2F' if diff_3 < 0 else '#2E7D32'}; font-weight:bold;">
@@ -785,10 +833,67 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # E. 📋 최근 주요 공시 & 시장 조치 알림 (신규 기능)
+            # 6. 📉 [신규 3번] 최근 5영업일 핵심 지표(S값) 궤적 추적
+            recent_5 = df_full_result.tail(5).copy()
+            s_traj_html = " ➔ ".join([f"<b>{row['일자'][5:]}</b> (S: <code>{row['S']}</code>)" for _, row in recent_5.iterrows()])
+            s_diff_5 = recent_5['S'].iloc[-1] - recent_5['S'].iloc[0]
+            
+            st.markdown(f"""
+            <div class="brief-card">
+                <div class="brief-title">6. 📉 최근 5영업일 핵심 지표(S값) 궤적 추적</div>
+                <div style="font-size:0.88rem; color:#222; line-height:1.6;">
+                    • <b>5일간 S값 추이</b>: {s_traj_html}<br>
+                    • <b>추세 진단</b>: 최근 5일간 S값이 <b>{s_diff_5:+d} 포인트</b> 변동했습니다. 
+                      {'하락 폭이 둔화되며 바닥 수렴 국면에 진입하고 있습니다.' if abs(s_diff_5) <= 5 else '지표의 변동성이 확대되고 있으므로 단계별 지정가만 체결 대기하세요.'}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 7. 🧮 [신규 2번] 내 계좌 실전 탈출 시뮬레이터 (방어선 추가 매수 시 평단가 변화)
+            my_port_item = None
+            if 'my_portfolio_items' in st.session_state:
+                for itm in st.session_state.my_portfolio_items:
+                    if itm.get('confirmed_code') == stock_code and itm.get('qty', 0) > 0:
+                        my_port_item = itm
+                        break
+
+            if my_port_item:
+                curr_my_qty = my_port_item['qty']
+                curr_my_price = my_port_item['avg_price']
+                curr_eval_pct = ((curr_p / curr_my_price) - 1.0) * 100 if curr_my_price > 0 else 0
+                
+                # 가상 3차 방어선(시드의 10% 가정, 300만원 분량 매수 시뮬레이션)
+                add_budget_3 = 3000000
+                add_qty_3 = int(add_budget_3 / tp_3) if tp_3 > 0 else 0
+                sim_price_3 = int((curr_my_qty * curr_my_price + add_qty_3 * tp_3) / (curr_my_qty + add_qty_3)) if (curr_my_qty + add_qty_3) > 0 else curr_my_price
+                price_drop_3 = curr_my_price - sim_price_3
+
+                st.markdown(f"""
+                <div class="brief-card" style="border-left: 5px solid #6A1B9A;">
+                    <div class="brief-title" style="color: #6A1B9A;">7. 🧮 내 계좌 실전 탈출 시뮬레이터 (보유 포트폴리오 연동)</div>
+                    <div style="font-size:0.88rem; color:#222; line-height:1.6;">
+                        • <b>현재 내 포지션</b>: 보유 수량 <b>{curr_my_qty:,}주</b> | 평단가 <b>{curr_my_price:,}원</b> (현재 평가손익: <span style="color:{'#D32F2F' if curr_eval_pct > 0 else '#1976D2'}; font-weight:bold;">{curr_eval_pct:+.2f}%</span>)<br>
+                        • <b>만약 내일 3차 방어선({tp_3:,}원, 10%) 추가 체결 시:</b><br>
+                          ➔ 내 예상 평단가는 <span style="text-decoration:line-through; color:#777;">{curr_my_price:,}원</span> ➔ 
+                          <span style="color:#D32F2F; font-size:1.0rem; font-weight:bold;">{sim_price_3:,}원</span>으로 <b>{price_drop_3:,}원 즉시 인하!</b><br>
+                        • <b>실전 코멘트</b>: 방어선 집행 시 평단가가 대폭 낮아져 기술적 반등 시 원금 회복 및 익절 탈출이 훨씬 수월해집니다.
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="brief-card">
+                    <div class="brief-title">7. 🧮 내 계좌 실전 탈출 시뮬레이터</div>
+                    <div style="font-size:0.86rem; color:#555;">
+                        • <i>[💼 보유 포트폴리오] 탭에 <b>{stock_name}</b>의 수량과 평단가를 입력해 두시면, 방어선 추가 매수 시 내 평단가가 얼마나 낮아지는지 자동 시뮬레이션됩니다.</i>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            # 8. 📋 최근 주요 공시 & 시장 조치 알림
             st.markdown("""
             <div class="brief-card">
-                <div class="brief-title">📋 최근 주요 공시 & 시장 조치 알림</div>
+                <div class="brief-title">8. 📋 최근 주요 공시 & 시장 조치 알림</div>
             """, unsafe_allow_html=True)
             if disclosure_df is not None and not disclosure_df.empty:
                 st.dataframe(disclosure_df, use_container_width=True)
@@ -801,16 +906,17 @@ if stock_code:
                 """, unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # F. 핵심 지표 & 내일 실전 Action Item
-            s_diff = current_s_val - s['prev_s']
-            s_diff_str = f"전일 대비 {s_diff:+d}" if s_diff != 0 else "전일과 동일"
+            # 9. 🧭 [신규 4번] 내일 장 시작 전 3대 체크포인트 (내일 08:50 행동 요강)
             st.markdown(f"""
-            <div class="brief-card" style="border-left: 5px solid #D32F2F;">
-                <div class="brief-title" style="color:#D32F2F;">💡 내일(다음 영업일) 실전 Action Item & 지정가 예약 가이드</div>
-                <div style="font-size:0.88rem; color:#222; line-height:1.6;">
-                    • <b>현재 핵심 지표</b>: S값 <span style="font-weight:900; color:#D32F2F;">{current_s_val}</span> ({s_diff_str}) | MM: {s['MM']} | PM: {s['PM']}% | LM: {s['LM']}%<br>
-                    • <b>포지션 상태</b>: 현재 <b>[{cur_sig}]</b> 영역 위치<br>
-                    • <b>실전 행동 지침</b>: 장 시작 전 무리한 시장가 추격 매수는 절대 금지합니다. 주가가 {tp_3:,}원 아래로 깊게 밀리지 않는 한, <b>예비 현금 30%를 사수하며 철저하게 관망(홀딩)</b>을 유지하세요.
+            <div class="brief-card" style="border-left: 5px solid #D32F2F; background-color: #FFF8E1;">
+                <div class="brief-title" style="color: #D32F2F;">9. 🧭 내일 장 시작 전 3대 체크포인트 (내일 08:50 행동 요강)</div>
+                <div style="font-size:0.88rem; color:#111; line-height:1.7;">
+                    <b>1️⃣ 지정가 예약 주문 세팅:</b><br>
+                    • 3차 목표가: <span style="color:#D32F2F; font-weight:bold;">{tp_3:,}원 이하</span>에만 1차 방어선(10%) 예약 매수 걸기<br>
+                    <b>2️⃣ 개장 시가 갭(Gap) 체크:</b><br>
+                    • 시초가가 갭하락으로 출발해도 장 시작 10분간은 시장가 추격 매수를 일절 금지하고 호가 안정 확인<br>
+                    <b>3️⃣ 절대 현금 사수 원칙:</b><br>
+                    • 주가가 {tp_3:,}원 위에서 잔파동을 보일 때는 <b>예비 현금 30%를 계좌에 100% 사수하며 관망(홀딩) 유지!</b>
                 </div>
             </div>
             """, unsafe_allow_html=True)
