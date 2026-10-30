@@ -127,11 +127,9 @@ with st.form(key="search_form"):
 stock_code, stock_name = resolve_code_and_name(user_input)
 
 def r10(val):
-    """엑셀 ROUND(값, -1)과 동일하게 10원 단위 반올림"""
     return int(np.floor(val / 10.0 + 0.5) * 10)
 
 def trunc_int(val):
-    """엑셀 INT / TRUNC(소수점 버림) 처리"""
     return int(np.trunc(val))
 
 def style_table(df_target, df_full):
@@ -220,11 +218,22 @@ def style_table(df_target, df_full):
                     styles[idx] = 'color: #2E7D32; font-weight: bold; white-space: nowrap;'
         return styles
 
-    return df_target.style.apply(lambda row: color_styler(row.name, row), axis=1).format({
-        '종가(B)': '{:,}', '거래량(F)': '{:,}', '거래비율(G)': '{:.2f}'
-    }, na_rep="-")
+    # 파동 관련 열들의 소수점(.000000)을 없애고 정수 천단위 콤마 서식 적용
+    format_dict = {
+        '종가(B)': '{:,}',
+        '거래량(F)': '{:,}',
+        '거래비율(G)': '{:.2f}',
+        '부-반등(M)': lambda x: f"{int(round(float(x))):,}" if pd.notna(x) and str(x).strip() not in ['', '-'] else "-",
+        '반등(N)': lambda x: f"{int(round(float(x))):,}" if pd.notna(x) and str(x).strip() not in ['', '-'] else "-",
+        '상-추세(O)': lambda x: f"{int(round(float(x))):,}" if pd.notna(x) and str(x).strip() not in ['', '-'] else "-",
+        '하-추세(Q)': lambda x: f"{int(round(float(x))):,}" if pd.notna(x) and str(x).strip() not in ['', '-'] else "-",
+        '조정(R)': lambda x: f"{int(round(float(x))):,}" if pd.notna(x) and str(x).strip() not in ['', '-'] else "-",
+        '부-조정(S)': lambda x: f"{int(round(float(x))):,}" if pd.notna(x) and str(x).strip() not in ['', '-'] else "-"
+    }
 
-# 🔥 엑셀 파일(0.ETF_233740KODEX 코스닥150 레버리지.xlsx)의 PPP 시트 수식 완벽 구현
+    return df_target.style.apply(lambda row: color_styler(row.name, row), axis=1).format(format_dict, na_rep="-")
+
+# 엑셀 파일(0.ETF_233740KODEX 코스닥150 레버리지.xlsx)의 PPP 시트 수식 완벽 구현
 def calculate_indicator_sheet(df_raw):
     df = df_raw.copy().reset_index()
     closes = pd.to_numeric(df['Close'], errors='coerce').ffill().values
@@ -246,14 +255,12 @@ def calculate_indicator_sheet(df_raw):
     state = 'UP'
     peak = init_p
     trough = init_p
-    first_N = init_p   # 반등 첫 가격
-    first_R = init_p   # 조정 첫 가격
-    up_phase = 'N'     # 'N'(반등) 또는 'O'(상-추세)
-    down_phase = 'R'   # 'R'(조정) 또는 'Q'(하-추세)
+    first_N = init_p
+    first_R = init_p
+    up_phase = 'N'
+    down_phase = 'R'
 
-    # 엑셀 7~8행 파동 기록 레지스터
     N8, O8, Q8, R8 = 0, init_p, 0, 0
-    # 직전 완료된 고점과 저점 (1영업일 뒤 MM/PM/LM/S에 반영되는 엑셀 규칙 적용)
     active_high = init_p
     active_low = 0
     pending_high = None
@@ -262,7 +269,6 @@ def calculate_indicator_sheet(df_raw):
     for i in range(n):
         p = int(round(closes[i]))
 
-        # 전일(i-1)에 확정된 파동 전환이 있다면 오늘(i)부터 MM, PM, LM, S 기준값에 반영 (엑셀 1일 이연 규칙)
         if pending_high is not None:
             active_high = pending_high
             pending_high = None
@@ -270,7 +276,6 @@ def calculate_indicator_sheet(df_raw):
             active_low = pending_low
             pending_low = None
 
-        # 당일 MM, PM, LM, S 계산 (엑셀 TRUNC/INT 방식 동기화)
         if active_high > 0 and active_low > 0:
             mm_raw = (active_high / active_low - 1.0) * 100.0
             pm_raw = (p / active_high - 1.0) * 100.0
@@ -282,7 +287,6 @@ def calculate_indicator_sheet(df_raw):
         else:
             mm, pm, lm, s_val = 0, 0, 0, 0
 
-        # RM 계산 (최근 완료 고점/저점 흐름 대비)
         rm = trunc_int((p / active_high - 1.0) * 100.0) if active_high > 0 else 0
 
         if s_val >= -15 and active_low > 0:
@@ -306,7 +310,6 @@ def calculate_indicator_sheet(df_raw):
         rm_list.append(rm)
         buy_signals.append(sig)
 
-        # 당일 종가(p)에 따른 파동 추적 및 변곡점 기록 (다음 날 아침부터 MM/PM/LM에 반영됨)
         if i == 0:
             continue
 
@@ -321,11 +324,9 @@ def calculate_indicator_sheet(df_raw):
                 else:
                     n_col[i] = p
             else:
-                # 고점 대비 하락 전환 체크 (첫 파동은 -4.5% 조정 진입, 이후 -9.5% 전환가 적용)
                 down_turn_price = r10(peak * (1.0 - 0.095))
                 first_step_down = r10(peak * (1.0 - 0.045))
                 if p <= down_turn_price or (active_low == 0 and p <= first_step_down):
-                    # 상승 파동 마감 -> 내일부터 새로운 고점(peak)이 active_high로 적용됨
                     if up_phase == 'O':
                         O8 = peak
                     else:
@@ -345,7 +346,7 @@ def calculate_indicator_sheet(df_raw):
                         r_col[i] = p
                 elif p <= first_step_down:
                     s_col[i] = p
-        else:  # state == 'DOWN'
+        else:
             if p < trough:
                 trough = p
                 u_dn_target = r10(first_R * (1.0 - 0.045))
@@ -356,11 +357,9 @@ def calculate_indicator_sheet(df_raw):
                 else:
                     r_col[i] = p
             else:
-                # 저점 대비 +9.5% 반등 전환가 도달 여부 확인
                 up_turn_price = r10(trough * 1.095)
                 first_step_up = r10(trough * 1.045)
                 if p >= up_turn_price:
-                    # 하락 파동 마감 -> 내일부터 새로운 저점(trough)이 active_low로 적용됨
                     if down_phase == 'Q':
                         Q8 = trough
                     else:
@@ -401,7 +400,6 @@ def calculate_indicator_sheet(df_raw):
         '부-조정(S)': s_col
     })
 
-    # 다음 영업일 목표가 계산을 위한 최신 기준 고점/저점 반영
     next_high = pending_high if pending_high is not None else active_high
     next_low = pending_low if pending_low is not None else active_low
 
@@ -436,7 +434,6 @@ kosdaq_chg = ((kosdaq_df['Close'].iloc[-1] / kosdaq_df['Close'].iloc[-2]) - 1.0)
 
 if stock_code:
     with st.spinner(f"[{stock_name} ({stock_code})] 엑셀 원본 수식으로 파동을 계산 중입니다..."):
-        # 파동 뿌리가 흔들리지 않도록 충분한 과거 데이터를 불러온 뒤 고정 시작점 유지
         raw_df, _ = get_naver_stock_data(stock_code, count=1500)
 
     if raw_df is not None and not raw_df.empty:
@@ -519,7 +516,7 @@ if stock_code:
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표 (전체)", "🎯 4단계 가이드 & 자동금액", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 엑셀 원본(PPP 시트)의 1일 이연 규칙과 INT 버림 수식이 그대로 적용되어 과거 일자의 값이 절대 바뀌지 않습니다.")
+            st.caption("📈 엑셀 원본(PPP 시트)과 동일하게 모든 파동 가격이 천 단위 콤마 정수로 깔끔하게 표시됩니다.")
             df_rev = df_display.iloc[::-1]
             st.dataframe(style_table(df_rev, df_full_result), use_container_width=True, height=520)
 
