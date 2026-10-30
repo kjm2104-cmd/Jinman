@@ -20,7 +20,6 @@ st.markdown("""
     .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
     div[data-testid="stMetricValue"] { font-size: 1.25rem; font-weight: 700; }
     div[data-testid="stMetricLabel"] { font-size: 0.85rem; }
-    table dataframe, th, td { font-size: 0.82rem !important; padding: 4px 5px !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -513,13 +512,39 @@ if stock_code:
         c3.metric("코스피 지수", f"{kospi_val:,}", f"{kospi_chg:+.2f}%")
         c4.metric("코스닥 지수", f"{kosdaq_val:,}", f"{kosdaq_chg:+.2f}%")
 
-        # 🔥 첫 화면 탭을 '매수·매도 표 (전체)'로 변경
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표 (전체)", "🎯 1안 실전 가이드 & 계산기", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
             st.caption("📈 엑셀 원본(PPP 시트)과 100% 일치하며 모든 변곡점 가격이 정수로 표시됩니다.")
             df_rev = df_display.iloc[::-1]
-            st.dataframe(style_table(df_rev, df_full_result), use_container_width=True, height=520)
+
+            # 🔥 거래량 및 주요 열 너비 고정 설정 (글씨 잘림 방지)
+            col_configs = {
+                "일자": st.column_config.TextColumn("일자", width=95),
+                "종가(B)": st.column_config.TextColumn("종가(B)", width=85),
+                "등락률(C)": st.column_config.TextColumn("등락률(C)", width=75),
+                "매수신호": st.column_config.TextColumn("매수신호", width=125),
+                "거래량(F)": st.column_config.TextColumn("거래량(F)", width=120),
+                "거래비율(G)": st.column_config.TextColumn("거래비율(G)", width=85),
+                "MM": st.column_config.TextColumn("MM", width=55),
+                "PM": st.column_config.TextColumn("PM", width=55),
+                "LM": st.column_config.TextColumn("LM", width=55),
+                "S": st.column_config.TextColumn("S", width=55),
+                "RM": st.column_config.TextColumn("RM", width=55),
+                "부-반등(M)": st.column_config.TextColumn("부-반등(M)", width=85),
+                "반등(N)": st.column_config.TextColumn("반등(N)", width=85),
+                "상-추세(O)": st.column_config.TextColumn("상-추세(O)", width=85),
+                "하-추세(Q)": st.column_config.TextColumn("하-추세(Q)", width=85),
+                "조정(R)": st.column_config.TextColumn("조정(R)", width=85),
+                "부-조정(S)": st.column_config.TextColumn("부-조정(S)", width=85),
+            }
+
+            st.dataframe(
+                style_table(df_rev, df_full_result),
+                use_container_width=True,
+                height=520,
+                column_config=col_configs
+            )
 
         with tab2:
             st.markdown("##### 🎯 [1안. 정석 분할 방어형: 기본 70% + 예비 방어 30% 플랜]")
