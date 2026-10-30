@@ -14,12 +14,13 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 모바일 가독성 및 카드 스타일 최적화 CSS
+# 모바일 가독성 및 카드 스타일 최적화 CSS (테이블 전체 가운데 정렬 포함)
 st.markdown("""
 <style>
     .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
     div[data-testid="stMetricValue"] { font-size: 1.25rem; font-weight: 700; }
     div[data-testid="stMetricLabel"] { font-size: 0.85rem; }
+    table dataframe, th, td { font-size: 0.82rem !important; padding: 4px 5px !important; text-align: center !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -131,6 +132,7 @@ def r10(val):
 def trunc_int(val):
     return int(np.trunc(val))
 
+# 🔥 모든 셀 가운데 정렬이 적용된 스타일러 함수
 def style_table(df_target, df_full):
     cols_grad = ['MM', 'PM', 'LM', 'RM', 'S']
     col_bounds = {}
@@ -140,19 +142,21 @@ def style_table(df_target, df_full):
             col_bounds[c] = (vals.min(), vals.max())
 
     def color_styler(row_idx, row):
-        styles = [''] * len(row)
+        styles = ['text-align: center;'] * len(row)
         curr_close = row.get('종가(B)', 0)
         prev_close = df_full.iloc[row.name - 1].get('종가(B)', 0) if row.name > 0 else None
 
         for idx, col_name in enumerate(row.index):
             val = row[col_name]
+            base_style = 'text-align: center;'
+
             if col_name in ['종가(B)', '등락률(C)'] and prev_close is not None:
                 if curr_close > prev_close:
-                    styles[idx] = 'color: #D32F2F; font-weight: bold;'
+                    styles[idx] = f'{base_style} color: #D32F2F; font-weight: bold;'
                 elif curr_close < prev_close:
-                    styles[idx] = 'color: #1976D2; font-weight: bold;'
+                    styles[idx] = f'{base_style} color: #1976D2; font-weight: bold;'
                 else:
-                    styles[idx] = 'color: #111111;'
+                    styles[idx] = f'{base_style} color: #111111;'
             
             elif col_name == '거래량(F)':
                 try:
@@ -163,11 +167,11 @@ def style_table(df_target, df_full):
                     if vol_diff_ratio >= 0:
                         ratio = min(1.0, vol_diff_ratio / 1.0)
                         r = 255; g = int(240 - ratio * 180); b = int(240 - ratio * 180)
-                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.3 else "#222222"}; font-weight: bold; white-space: nowrap; text-align: right;'
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.3 else "#222222"}; font-weight: bold; white-space: nowrap;'
                     else:
                         ratio = min(1.0, abs(vol_diff_ratio) / 0.5)
                         r = int(240 - ratio * 180); g = int(240 - ratio * 180); b = 255
-                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#0D47A1" if ratio > 0.3 else "#222222"}; font-weight: bold; white-space: nowrap; text-align: right;'
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: {"#0D47A1" if ratio > 0.3 else "#222222"}; font-weight: bold; white-space: nowrap;'
                 except Exception:
                     pass
 
@@ -177,13 +181,13 @@ def style_table(df_target, df_full):
                     if s_num > 0:
                         ratio = min(1.0, s_num / 50.0)
                         r = 255; g = int(230 - ratio * 150); b = int(230 - ratio * 150)
-                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: #B71C1C; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: #B71C1C; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
                     elif s_num < 0:
                         ratio = min(1.0, abs(s_num) / 60.0)
                         r = int(230 - ratio * 150); g = int(230 - ratio * 150); b = 255
-                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
                     else:
-                        styles[idx] = 'background-color: #E0E0E0; color: #333333; font-weight: bold;'
+                        styles[idx] = f'{base_style} background-color: #E0E0E0; color: #333333; font-weight: bold;'
                 except Exception:
                     pass
 
@@ -196,25 +200,25 @@ def style_table(df_target, df_full):
                     if col_name == 'PM' and v < 0:
                         ratio_neg = min(1.0, abs(v) / 50.0)
                         r = int(240 - ratio_neg * 150); g = int(240 - ratio_neg * 150); b = 255
-                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: bold; padding: 2px 6px; border-radius: 6px;'
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: bold; padding: 2px 6px; border-radius: 6px;'
                     else:
                         r = 255; g = int(245 - ratio * 170); b = int(245 - ratio * 170)
-                        styles[idx] = f'background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.5 else "#222222"}; font-weight: {"bold" if ratio > 0.4 else "normal"}; padding: 2px 6px; border-radius: 6px;'
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.5 else "#222222"}; font-weight: {"bold" if ratio > 0.4 else "normal"}; padding: 2px 6px; border-radius: 6px;'
                 except Exception:
                     pass
 
             elif col_name == '매수신호':
                 val_str = str(val)
                 if '강력진입구간' in val_str:
-                    styles[idx] = 'background-color: #7B1FA2; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
+                    styles[idx] = f'{base_style} background-color: #7B1FA2; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
                 elif '진입구간' in val_str:
-                    styles[idx] = 'background-color: #B71C1C; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
+                    styles[idx] = f'{base_style} background-color: #B71C1C; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
                 elif '신호' in val_str:
-                    styles[idx] = 'background-color: #FF8F00; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
+                    styles[idx] = f'{base_style} background-color: #FF8F00; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
                 elif val_str == '매도 추천':
-                    styles[idx] = 'background-color: #1976D2; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
+                    styles[idx] = f'{base_style} background-color: #1976D2; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
                 elif val_str == '관망':
-                    styles[idx] = 'color: #2E7D32; font-weight: bold; white-space: nowrap;'
+                    styles[idx] = f'{base_style} color: #2E7D32; font-weight: bold; white-space: nowrap;'
         return styles
 
     format_dict = {
@@ -512,13 +516,14 @@ if stock_code:
         c3.metric("코스피 지수", f"{kospi_val:,}", f"{kospi_chg:+.2f}%")
         c4.metric("코스닥 지수", f"{kosdaq_val:,}", f"{kosdaq_chg:+.2f}%")
 
+        # 탭 1: 매수·매도 표 (전체)
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표 (전체)", "🎯 1안 실전 가이드 & 계산기", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 엑셀 원본(PPP 시트)과 100% 일치하며 모든 변곡점 가격이 정수로 표시됩니다.")
+            st.caption("📈 엑셀 원본(PPP 시트)과 100% 일치하며 모든 셀이 가운데 정렬 및 정수 처리되어 한눈에 보기 편합니다.")
             df_rev = df_display.iloc[::-1]
 
-            # 🔥 거래량 및 주요 열 너비 고정 설정 (글씨 잘림 방지)
+            # 열 너비 고정 설정 (가운데 정렬 + 글씨 잘림 방지)
             col_configs = {
                 "일자": st.column_config.TextColumn("일자", width=95),
                 "종가(B)": st.column_config.TextColumn("종가(B)", width=85),
