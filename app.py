@@ -14,13 +14,21 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 모바일 가독성 및 카드 스타일 최적화 CSS (테이블 전체 가운데 정렬 포함)
+# 모바일 가독성 및 초밀착 컴팩트 표 스타일 최적화 CSS
 st.markdown("""
 <style>
-    .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
-    div[data-testid="stMetricValue"] { font-size: 1.25rem; font-weight: 700; }
-    div[data-testid="stMetricLabel"] { font-size: 0.85rem; }
-    table dataframe, th, td { font-size: 0.82rem !important; padding: 4px 5px !important; text-align: center !important; }
+    .block-container { padding-top: 1.0rem; padding-bottom: 2rem; padding-left: 0.8rem; padding-right: 0.8rem; }
+    div[data-testid="stMetricValue"] { font-size: 1.2rem; font-weight: 700; }
+    div[data-testid="stMetricLabel"] { font-size: 0.82rem; }
+    
+    /* 표 내부 셀 간격 초밀착 및 가운데 정렬 */
+    div[data-testid="stDataFrame"] { width: 100%; }
+    table, th, td { 
+        font-size: 0.80rem !important; 
+        padding: 2px 3px !important; 
+        text-align: center !important; 
+        line-height: 1.2 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -132,7 +140,7 @@ def r10(val):
 def trunc_int(val):
     return int(np.trunc(val))
 
-# 🔥 모든 셀 가운데 정렬이 적용된 스타일러 함수
+# 표 컬러 및 가운데 정렬 스타일러 함수
 def style_table(df_target, df_full):
     cols_grad = ['MM', 'PM', 'LM', 'RM', 'S']
     col_bounds = {}
@@ -167,11 +175,11 @@ def style_table(df_target, df_full):
                     if vol_diff_ratio >= 0:
                         ratio = min(1.0, vol_diff_ratio / 1.0)
                         r = 255; g = int(240 - ratio * 180); b = int(240 - ratio * 180)
-                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.3 else "#222222"}; font-weight: bold; white-space: nowrap;'
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.3 else "#222222"}; font-weight: bold;'
                     else:
                         ratio = min(1.0, abs(vol_diff_ratio) / 0.5)
                         r = int(240 - ratio * 180); g = int(240 - ratio * 180); b = 255
-                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: {"#0D47A1" if ratio > 0.3 else "#222222"}; font-weight: bold; white-space: nowrap;'
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: {"#0D47A1" if ratio > 0.3 else "#222222"}; font-weight: bold;'
                 except Exception:
                     pass
 
@@ -181,11 +189,11 @@ def style_table(df_target, df_full):
                     if s_num > 0:
                         ratio = min(1.0, s_num / 50.0)
                         r = 255; g = int(230 - ratio * 150); b = int(230 - ratio * 150)
-                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: #B71C1C; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: #B71C1C; font-weight: 900; border-radius: 4px;'
                     elif s_num < 0:
                         ratio = min(1.0, abs(s_num) / 60.0)
                         r = int(230 - ratio * 150); g = int(230 - ratio * 150); b = 255
-                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: 900; padding: 2px 6px; border-radius: 8px;'
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: 900; border-radius: 4px;'
                     else:
                         styles[idx] = f'{base_style} background-color: #E0E0E0; color: #333333; font-weight: bold;'
                 except Exception:
@@ -200,25 +208,25 @@ def style_table(df_target, df_full):
                     if col_name == 'PM' and v < 0:
                         ratio_neg = min(1.0, abs(v) / 50.0)
                         r = int(240 - ratio_neg * 150); g = int(240 - ratio_neg * 150); b = 255
-                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: bold; padding: 2px 6px; border-radius: 6px;'
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: bold;'
                     else:
                         r = 255; g = int(245 - ratio * 170); b = int(245 - ratio * 170)
-                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.5 else "#222222"}; font-weight: {"bold" if ratio > 0.4 else "normal"}; padding: 2px 6px; border-radius: 6px;'
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.5 else "#222222"}; font-weight: {"bold" if ratio > 0.4 else "normal"};'
                 except Exception:
                     pass
 
             elif col_name == '매수신호':
                 val_str = str(val)
                 if '강력진입구간' in val_str:
-                    styles[idx] = f'{base_style} background-color: #7B1FA2; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
+                    styles[idx] = f'{base_style} background-color: #7B1FA2; color: #FFFFFF; font-weight: 900;'
                 elif '진입구간' in val_str:
-                    styles[idx] = f'{base_style} background-color: #B71C1C; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
+                    styles[idx] = f'{base_style} background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
                 elif '신호' in val_str:
-                    styles[idx] = f'{base_style} background-color: #FF8F00; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
+                    styles[idx] = f'{base_style} background-color: #FF8F00; color: #FFFFFF; font-weight: 900;'
                 elif val_str == '매도 추천':
-                    styles[idx] = f'{base_style} background-color: #1976D2; color: #FFFFFF; font-weight: 900; white-space: nowrap;'
+                    styles[idx] = f'{base_style} background-color: #1976D2; color: #FFFFFF; font-weight: 900;'
                 elif val_str == '관망':
-                    styles[idx] = f'{base_style} color: #2E7D32; font-weight: bold; white-space: nowrap;'
+                    styles[idx] = f'{base_style} color: #2E7D32; font-weight: bold;'
         return styles
 
     format_dict = {
@@ -520,33 +528,33 @@ if stock_code:
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표 (전체)", "🎯 1안 실전 가이드 & 계산기", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 엑셀 원본(PPP 시트)과 100% 일치하며 모든 셀이 가운데 정렬 및 정수 처리되어 한눈에 보기 편합니다.")
+            st.caption("📈 엑셀 원본(PPP 시트)과 100% 일치하며 여백 없이 칸에 딱 맞게 정렬된 밀착형 표입니다.")
             df_rev = df_display.iloc[::-1]
 
-            # 열 너비 고정 설정 (가운데 정렬 + 글씨 잘림 방지)
+            # 🔥 글자 길이에 꼭 맞춘 초밀착 너비 설정 (빈 공간 제거)
             col_configs = {
-                "일자": st.column_config.TextColumn("일자", width=95),
-                "종가(B)": st.column_config.TextColumn("종가(B)", width=85),
-                "등락률(C)": st.column_config.TextColumn("등락률(C)", width=75),
-                "매수신호": st.column_config.TextColumn("매수신호", width=125),
-                "거래량(F)": st.column_config.TextColumn("거래량(F)", width=120),
-                "거래비율(G)": st.column_config.TextColumn("거래비율(G)", width=85),
-                "MM": st.column_config.TextColumn("MM", width=55),
-                "PM": st.column_config.TextColumn("PM", width=55),
-                "LM": st.column_config.TextColumn("LM", width=55),
-                "S": st.column_config.TextColumn("S", width=55),
-                "RM": st.column_config.TextColumn("RM", width=55),
-                "부-반등(M)": st.column_config.TextColumn("부-반등(M)", width=85),
-                "반등(N)": st.column_config.TextColumn("반등(N)", width=85),
-                "상-추세(O)": st.column_config.TextColumn("상-추세(O)", width=85),
-                "하-추세(Q)": st.column_config.TextColumn("하-추세(Q)", width=85),
-                "조정(R)": st.column_config.TextColumn("조정(R)", width=85),
-                "부-조정(S)": st.column_config.TextColumn("부-조정(S)", width=85),
+                "일자": st.column_config.TextColumn("일자", width=86),
+                "종가(B)": st.column_config.TextColumn("종가", width=68),
+                "등락률(C)": st.column_config.TextColumn("등락률", width=62),
+                "매수신호": st.column_config.TextColumn("매수신호", width=105),
+                "거래량(F)": st.column_config.TextColumn("거래량", width=98),
+                "거래비율(G)": st.column_config.TextColumn("비율", width=55),
+                "MM": st.column_config.TextColumn("MM", width=46),
+                "PM": st.column_config.TextColumn("PM", width=46),
+                "LM": st.column_config.TextColumn("LM", width=46),
+                "S": st.column_config.TextColumn("S", width=48),
+                "RM": st.column_config.TextColumn("RM", width=46),
+                "부-반등(M)": st.column_config.TextColumn("부반등", width=68),
+                "반등(N)": st.column_config.TextColumn("반등", width=68),
+                "상-추세(O)": st.column_config.TextColumn("상추세", width=68),
+                "하-추세(Q)": st.column_config.TextColumn("하추세", width=68),
+                "조정(R)": st.column_config.TextColumn("조정", width=68),
+                "부-조정(S)": st.column_config.TextColumn("부조정", width=68),
             }
 
             st.dataframe(
                 style_table(df_rev, df_full_result),
-                use_container_width=True,
+                use_container_width=False,  # 강제로 늘어나서 생기는 빈 여백 방지
                 height=520,
                 column_config=col_configs
             )
