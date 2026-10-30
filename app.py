@@ -23,7 +23,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (스마트 브리핑 탑재)")
+st.subheader("📈 간편 교대 매매 시스템 (4단계 핵심 압축 버전)")
 
 # 네이버 금융 일별 시세 크롤링 함수 (개별 종목 및 지수 공용)
 @st.cache_data(ttl=3600)
@@ -263,6 +263,7 @@ def calculate_indicator_sheet(df_raw):
         lm = int(round((p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
         s_val = lm - mm
 
+        # 🔥 요청하신 4단계 매매 구조 매핑 (4차는 S ≤ -55)
         if s_val >= 0:
             if s_val >= -15:
                 sig = "매도 추천"
@@ -331,6 +332,7 @@ if stock_code:
         max_mn_val = s.get('max_mn', 0)
         min_pq_val = s.get('min_pq', 0)
         
+        # 🔥 4단계 핵심 목표가 실시간 자동 계산 (-25%, -32%, -40%, -55%)
         four_stages_info = [
             (-25, "1차 신호"), (-32, "2차 진입구간"), (-40, "3차 진입구간"), (-55, "4차 강력진입구간")
         ]
@@ -341,45 +343,37 @@ if stock_code:
                 tp = r10(max_mn_val + (s_tgt * min_pq_val) / 100.0)
                 target_prices_4step.append(f"<b>{name}</b>: <span style='color:#D32F2F;'>{tp:,}원 이하</span> (S≤{s_tgt})")
 
-        # 🔥 [오늘의 실전 행동 가이드 (Action Item)] 정의
         if "강력진입구간" in cur_sig:
             action_title = f"🟣 [{cur_sig}] ➔ 최후 승부수 구간 도달!"
             action_desc = "S ≤ -55 최하단 바닥에 도달했습니다. 모든 화력을 집중할 때입니다."
-            action_item = "🚨 **[오늘의 Action Item]**: 4차 강력진입구간 비중(40%) 전액 집행 및 지정가 매수 세팅"
             badge_color = "#7B1FA2"
         elif "진입구간" in cur_sig:
             action_title = f"🔴 [{cur_sig}] ➔ 분할 매수 진행 구간!"
             action_desc = "하락이 깊어져 점진적으로 비중을 담아가는 구간입니다."
-            action_item = "📌 **[오늘의 Action Item]**: 해당 단계별 목표가 이하로 내려올 때 분할 매수 비중 체결 대기"
             badge_color = "#D32F2F"
         elif "신호" in cur_sig:
             action_title = f"🟠 [{cur_sig}] ➔ 하락 초입 탐색 신호!"
             action_desc = "본격적인 진입 전, 첫 번째 신호가 포착되었습니다."
-            action_item = "👀 **[오늘의 Action Item]**: 무리한 매수 자제, 1차 탐색 소액(10%)만 열어두고 관망 강화"
             badge_color = "#FF8F00"
         elif cur_sig == "매도 추천":
             action_title = f"🔵 [{cur_sig}] ➔ 지표 회복! 수익 실현 검토"
             action_desc = "S값이 안전지대로 회복되었습니다."
-            action_item = "💰 **[오늘의 Action Item]**: 평단가 위 익절 타이밍 포착 시 미련 없이 현금화 및 수확"
             badge_color = "#1976D2"
         else:
             action_title = f"🟢 [관망] ➔ 안전 구간"
             action_desc = "현금 100%를 유지하며 기회를 기다립니다."
-            action_item = "🛡️ **[오늘의 Action Item]**: 현금 100% 사수! 지수가 흔들려도 차분하게 기회를 기다리세요."
             badge_color = "#2E7D32"
 
         st.markdown(f"""
         <div style="background-color: #F8F9FA; border-left: 6px solid {badge_color}; padding: 14px; border-radius: 8px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
             <h3 style="margin: 0; color: {badge_color}; font-size: 1.1rem;">{action_title}</h3>
-            <p style="margin: 6px 0 4px 0; color: #222222; font-size: 0.9rem;">
+            <p style="margin: 6px 0 0 0; color: #222222; font-size: 0.9rem;">
                 <b>S값: <code>{current_s_val}</code> (PM: {s['PM']}%)</b> | {action_desc}
             </p>
-            <div style="background-color: #FFFFFF; border: 1px dashed {badge_color}; padding: 8px 10px; border-radius: 6px; margin-top: 8px; font-size: 0.88rem; color: #111;">
-                {action_item}
-            </div>
         </div>
         """, unsafe_allow_html=True)
 
+        # 🔥 4단계 지정가 세팅 가이드 박스
         if target_prices_4step:
             st.markdown(f"""
             <div style="background-color: #FFF3E0; border: 1px solid #FFB74D; padding: 10px; border-radius: 8px; margin-bottom: 12px; font-size: 0.85rem; color: #333; line-height: 1.4;">
@@ -397,7 +391,7 @@ if stock_code:
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 4단계 가이드 & 자동금액", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 4단계 핵심 압축 시스템이 적용된 실전 마스터 표입니다.")
+            st.caption("📈 새롭게 개편된 4단계 핵심 압축 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
@@ -405,6 +399,7 @@ if stock_code:
             st.markdown("##### 🎯 [4단계 핵심 매수 가이드 & 자동금액 계산기]")
             total_seed = st.number_input("💰 총 투자 예정 금액 (원)", min_value=100000, max_value=10000000000, value=30000000, step=1000000, format="%d")
 
+            # 4단계 비중 배분 (1차 10%, 2차 20%, 3차 30%, 4차 40%)
             four_step_rows = [
                 {"단계": "🟠 1차 신호", "조건": "S ≤ -25", "비중": 0.10, "가이드": "하락 초입 ➔ 신호 감지 (관망 또는 소액 탐색)"},
                 {"단계": "🔴 2차 진입구간", "조건": "S ≤ -32", "비중": 0.20, "가이드": "하락 진행 ➔ 2차 진입 시작"},
@@ -461,7 +456,7 @@ if stock_code:
                 with cols[4]:
                     disp_name = item["confirmed_name"] if item["confirmed_name"] else "종목 미조회"
                     st.markdown(f"<div style='font-size: 0.75rem; color: #555;'><b>{disp_name}</b></div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='font-size: 1.0rem; font-weight: bold; color: #D32F2F;'>{live_curr_price:,}원</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size: 1.0rem; font-weight: bold; color: #D32F2F;>{live_curr_price:,}원</div>", unsafe_allow_html=True)
                 with cols[5]:
                     st.markdown("<div style='margin-top: 22px;'></div>", unsafe_allow_html=True)
                     if st.button("❌", key=f"del_mp_{item['id']}"): items_to_delete.append(item)
