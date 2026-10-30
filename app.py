@@ -14,14 +14,13 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 모바일 가독성 및 초밀착 컴팩트 표 스타일 최적화 CSS
+# 모바일 가독성 및 카드 스타일 최적화 CSS
 st.markdown("""
 <style>
     .block-container { padding-top: 1.0rem; padding-bottom: 2rem; padding-left: 0.8rem; padding-right: 0.8rem; }
     div[data-testid="stMetricValue"] { font-size: 1.2rem; font-weight: 700; }
     div[data-testid="stMetricLabel"] { font-size: 0.82rem; }
     
-    /* 표 내부 셀 간격 초밀착 및 가운데 정렬 */
     div[data-testid="stDataFrame"] { width: 100%; }
     table, th, td { 
         font-size: 0.80rem !important; 
@@ -33,9 +32,9 @@ st.markdown("""
         background-color: #FFFFFF;
         border: 1px solid #E0E0E0;
         border-radius: 8px;
-        padding: 14px 16px;
-        margin-bottom: 12px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+        padding: 13px 15px;
+        margin-bottom: 11px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
     }
     .brief-title {
         font-size: 0.95rem;
@@ -89,6 +88,24 @@ def get_naver_stock_data(code, count=1500):
         return df, clean_code
     except Exception:
         return None, None
+
+# 종목별 외국인/기관 매매동향 크롤링 함수
+@st.cache_data(ttl=300)
+def get_investor_trend(code):
+    clean_code = str(code).strip()
+    if not clean_code or not clean_code.isdigit():
+        return None
+    url = f"https://finance.naver.com/item/frgn.naver?code={clean_code}"
+    try:
+        dfs = pd.read_html(url, encoding='euc-kr')
+        for df in dfs:
+            if '외국인' in str(df.columns) or '기관' in str(df.columns):
+                df_clean = df.dropna(how='all')
+                if len(df_clean) > 2:
+                    return df_clean
+        return None
+    except Exception:
+        return None
 
 # 주요 종목 빠른 매핑 사전
 name_to_code = {
@@ -156,7 +173,7 @@ def r10(val):
 def trunc_int(val):
     return int(np.trunc(val))
 
-# 표 컬러 및 가운데 정렬 스타일러 함수
+# 표 스타일러 함수 (가운데 정렬 + 컴팩트 패딩)
 def style_table(df_target, df_full):
     cols_grad = ['MM', 'PM', 'LM', 'RM', 'S']
     col_bounds = {}
@@ -462,8 +479,9 @@ kosdaq_val = int(kosdaq_df['Close'].iloc[-1]) if kosdaq_df is not None and not k
 kosdaq_chg = ((kosdaq_df['Close'].iloc[-1] / kosdaq_df['Close'].iloc[-2]) - 1.0) * 100 if kosdaq_df is not None and len(kosdaq_df) >= 2 else 0.0
 
 if stock_code:
-    with st.spinner(f"[{stock_name} ({stock_code})] 데이터를 분석 중입니다..."):
+    with st.spinner(f"[{stock_name} ({stock_code})] 수급 및 시장 분석을 포함한 마감 브리핑을 준비 중입니다..."):
         raw_df, _ = get_naver_stock_data(stock_code, count=1500)
+        investor_df = get_investor_trend(stock_code)
 
     if raw_df is not None and not raw_df.empty:
         df_full_result, s = calculate_indicator_sheet(raw_df)
@@ -478,7 +496,6 @@ if stock_code:
         max_mn_val = s.get('max_mn', 0)
         min_pq_val = s.get('min_pq', 0)
         
-        # 1안 기준 가격 단계 (기본 1~4차 및 재하락 2차 방어선 목표가)
         four_stages_info = [
             (-25, "1차 신호(5%)"), (-32, "2차 진입(10%)"), (-40, "3차 진입(25%)"), (-55, "4차 강력진입(30%)")
         ]
@@ -536,7 +553,6 @@ if stock_code:
         c3.metric("코스피 지수", f"{kospi_val:,}", f"{kospi_chg:+.2f}%")
         c4.metric("코스닥 지수", f"{kosdaq_val:,}", f"{kosdaq_chg:+.2f}%")
 
-        # 🔥 탭 구성: 마감 브리핑 탭을 2번째에 신설
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📊 매수·매도 표 (전체)", 
             "📢 마감 브리핑", 
@@ -580,66 +596,109 @@ if stock_code:
             )
 
         # -----------------------------
-        # TAB 2: 마감 브리핑 전용 탭 (신설)
+        # TAB 2: 마감 브리핑 전용 탭 (수급 동향 & 시장 프리핑 & 1, 2번 통합)
         # -----------------------------
         with tab2:
             st.markdown(f"#### 📢 [{s['date']}] {stock_name} 장 마감 종합 브리핑")
 
-            # 1. 오늘 장 마감 현황
-            mkt_status = "하락 마감" if kosdaq_chg < 0 else "상승 마감"
+            # A. 🌐 전체 시장 종합 프리핑
+            mkt_trend_desc = "양대 지수가 동반 조정을 받으며 시장 전반의 방어 심리가 강했습니다." if kospi_chg < 0 and kosdaq_chg < 0 else (
+                "코스닥 지수가 상대적으로 견고한 흐름을 보였습니다." if kosdaq_chg >= 0 else "코스피 대비 코스닥 레버리지에 하방 압력이 가중된 하루였습니다."
+            )
             st.markdown(f"""
-            <div class="brief-card">
-                <div class="brief-title">1. 오늘 장 마감 현황</div>
+            <div class="brief-card" style="border-left: 5px solid #1976D2;">
+                <div class="brief-title">🌐 전체 시장 종합 프리핑</div>
                 <ul style="margin:0; padding-left:20px; font-size:0.88rem; color:#222; line-height:1.6;">
-                    <li><b>종가</b>: {s['B1']:,}원 ({s['cur_chg']:+.2f}%)</li>
-                    <li><b>거래량</b>: {s['C1']:,}주 (전일 대비 {s['vol_ratio']:.2f}배)</li>
-                    <li><b>시장 환경</b>: 코스피 {kospi_chg:+.2f}% / 코스닥 {kosdaq_chg:+.2f}% ({mkt_status})</li>
+                    <li><b>코스피 지수</b>: {kospi_val:,}p (<span style="color:{'#D32F2F' if kospi_chg > 0 else '#1976D2'}; font-weight:bold;">{kospi_chg:+.2f}%</span>)</li>
+                    <li><b>코스닥 지수</b>: {kosdaq_val:,}p (<span style="color:{'#D32F2F' if kosdaq_chg > 0 else '#1976D2'}; font-weight:bold;">{kosdaq_chg:+.2f}%</span>)</li>
+                    <li><b>시장 기조 요약</b>: {mkt_trend_desc}</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
 
-            # 2. 핵심 지표
+            # B. 👥 투자자별 매매동향 (외국인·기관·개인 수급)
+            st.markdown("""
+            <div class="brief-card">
+                <div class="brief-title">👥 오늘 투자자별 매매동향 (수급 흐름)</div>
+            """, unsafe_allow_html=True)
+            
+            if investor_df is not None and not investor_df.empty:
+                try:
+                    # 네이버 수급 표 상위 3영업일 렌더링
+                    sub_inv = investor_df.iloc[:3].copy()
+                    st.dataframe(sub_inv, use_container_width=True)
+                except Exception:
+                    st.caption("실시간 수급 데이터를 집계 중입니다.")
+            else:
+                st.markdown("""
+                <div style="font-size:0.86rem; color:#444; line-height:1.5;">
+                    • <b>수급 체크</b>: 파동 저점 구간에서는 개인의 투매 물량을 외국인·기관이 흡수하는 손바뀜이 일어날 때 강력한 기술적 반등이 연출됩니다.<br>
+                    • <i>(네이버 증권 종목별 투자자 데이터 자동 연동)</i>
+                </div>
+                """, unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # C. 2번: ⚡ 거래량 시그널 & 바닥 경보
+            vol_ratio_val = s['vol_ratio']
+            if vol_ratio_val >= 1.5:
+                vol_badge = "🚨 [공포 투매 / 대량 손바뀜 발생]"
+                vol_color = "#D32F2F"
+                vol_desc = "거래량이 전일 대비 1.5배 이상 폭증했습니다. 패닉 셀링과 저가 매수세의 격돌로 <b>진바닥 형성 가능성이 매우 높은 시그널</b>입니다."
+            elif vol_ratio_val <= 0.7:
+                vol_badge = "💤 [거래량 소강 / 바닥 다지기]"
+                vol_color = "#1976D2"
+                vol_desc = "매도세가 진정되며 거래량이 말라붙었습니다. 급격한 추가 폭락보다는 <b>지지선을 확인하며 횡보 바닥을 다지는 구간</b>입니다."
+            else:
+                vol_badge = "⚖️ [평균 수준 거래량 유지]"
+                vol_color = "#333333"
+                vol_desc = "전일과 유사한 수준의 거래량을 유지하며 기존 파동 흐름을 이어가고 있습니다."
+
+            st.markdown(f"""
+            <div class="brief-card">
+                <div class="brief-title">⚡ 거래량 시그널 & 바닥 경보 (2번 기능)</div>
+                <div style="font-size:0.88rem; color:#222; line-height:1.6;">
+                    • <b>오늘 거래량</b>: {s['C1']:,}주 (전일 대비 <b>{vol_ratio_val:.2f}배</b>)<br>
+                    • <b>진단 결과</b>: <span style="color:{vol_color}; font-weight:bold;">{vol_badge}</span><br>
+                    • <b>해석</b>: {vol_desc}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # D. 1번: 🎯 다음 목표가까지 남은 거리 (D-Day 카운트다운)
+            curr_p = s['B1']
+            tp_3 = target_prices_dict.get(-40, 0)
+            tp_4 = target_prices_dict.get(-55, 0)
+            diff_3 = tp_3 - curr_p if tp_3 > 0 else 0
+            diff_3_pct = (diff_3 / curr_p) * 100.0 if curr_p > 0 else 0.0
+            diff_4 = tp_4 - curr_p if tp_4 > 0 else 0
+            diff_4_pct = (diff_4 / curr_p) * 100.0 if curr_p > 0 else 0.0
+
+            st.markdown(f"""
+            <div class="brief-card">
+                <div class="brief-title">🎯 다음 목표가까지 남은 거리 (1번 기능: D-Day 카운트다운)</div>
+                <div style="font-size:0.88rem; color:#222; line-height:1.6;">
+                    • <b>다음 3차 진입가 ({tp_3:,}원 / 예비 10%)까지</b>: 
+                      <span style="color:{'#D32F2F' if diff_3 < 0 else '#2E7D32'}; font-weight:bold;">
+                        {diff_3:+d}원 ({diff_3_pct:+.2f}%)
+                      </span> 남음 ➔ <i>{f'내일 {abs(diff_3_pct):.1f}% 추가 하락 시 1차 방어선 체결 시작' if diff_3 < 0 else '현재 3차 도달 구간 이하 위치'}</i><br>
+                    • <b>최후 4차 진입가 ({tp_4:,}원 / 예비 20%)까지</b>: 
+                      <span style="color:{'#D32F2F' if diff_4 < 0 else '#2E7D32'}; font-weight:bold;">
+                        {diff_4:+d}원 ({diff_4_pct:+.2f}%)
+                      </span> 남음 ➔ <i>{f'내일 {abs(diff_4_pct):.1f}% 추가 하락 시 최후 승부수 체결 시작' if diff_4 < 0 else '최후 바닥선 도달 상태'}</i>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # E. 핵심 지표 & 내일 실전 Action Item
             s_diff = current_s_val - s['prev_s']
             s_diff_str = f"전일 대비 {s_diff:+d}" if s_diff != 0 else "전일과 동일"
             st.markdown(f"""
-            <div class="brief-card">
-                <div class="brief-title">2. 핵심 지표</div>
-                <ul style="margin:0; padding-left:20px; font-size:0.88rem; color:#222; line-height:1.6;">
-                    <li><b>현재 상태</b>: {s['state']}</li>
-                    <li><b>3M 지표</b>: MM: <code>{s['MM']}</code> | PM: <code>{s['PM']}%</code> | LM: <code>{s['LM']}%</code> | RM: <code>{s['RM']}</code></li>
-                    <li><b>오늘의 S값</b>: <span style="font-weight:900; color:#D32F2F; font-size:1.05rem;">{current_s_val}</span> ({s_diff_str})</li>
-                    <li><b>기준 밴드</b>: 기준 고점 {max_mn_val:,}원 / 기준 저점 {min_pq_val:,}원</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # 3. 포지션 및 1안 자금 집행 진단
-            st.markdown(f"""
-            <div class="brief-card">
-                <div class="brief-title">3. 포지션 및 1안 자금 집행 진단</div>
-                <ul style="margin:0; padding-left:20px; font-size:0.88rem; color:#222; line-height:1.6;">
-                    <li><b>현재 단계</b>: <b>[{cur_sig}]</b> 구간 위치</li>
-                    <li><b>신규 진입자</b>: 정해진 분할 목표가 이하 체결 대기 (무리한 추격 매수 금지)</li>
-                    <li><b>기존 보유자 (이미 4차까지 진입된 경우)</b>:
-                        <br>• 아직 1차 신호(S ≥ -25)까지 본격 반등하지 못했으므로 섣부른 손절이나 물타기 금지.
-                        <br>• 남겨둔 <b>예비 현금(30%)은 절대로 먼저 쓰지 않고 100% 안전하게 계좌에 홀딩</b>합니다.
-                    </li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # 4. 내일 실전 Action Item & 지정가 예약 가이드
-            tp_3 = target_prices_dict.get(-40, 0)
-            tp_4 = target_prices_dict.get(-55, 0)
-            st.markdown(f"""
             <div class="brief-card" style="border-left: 5px solid #D32F2F;">
-                <div class="brief-title" style="color:#D32F2F;">4. 내일(다음 영업일) 실전 Action Item & 지정가 예약 가이드</div>
+                <div class="brief-title" style="color:#D32F2F;">💡 내일(다음 영업일) 실전 Action Item & 지정가 예약 가이드</div>
                 <div style="font-size:0.88rem; color:#222; line-height:1.6;">
-                    <b>🎯 다음 영업일 핵심 가격대:</b><br>
-                    • <b>3차 진입 목표가 (S ≤ -40)</b>: <span style="color:#D32F2F; font-weight:bold;">{tp_3:,}원 이하</span> (예비 현금 10% 2차 방어선 대기)<br>
-                    • <b>4차 강력진입 목표가 (S ≤ -55)</b>: <span style="color:#D32F2F; font-weight:bold;">{tp_4:,}원 이하</span> (전저점 이탈 시 최후 방어선 20% 대기)<br><br>
-                    <b>💡 내일의 행동 강령:</b><br>
-                    장 시작 전 무리한 시장가 추격 매수는 절대 금지합니다. 주가가 {tp_3:,}원 아래로 깊게 밀리지 않는 한, <b>예비 현금 30%를 지키며 철저하게 관망(홀딩)</b>을 유지하세요.
+                    • <b>현재 핵심 지표</b>: S값 <span style="font-weight:900; color:#D32F2F;">{current_s_val}</span> ({s_diff_str}) | MM: {s['MM']} | PM: {s['PM']}% | LM: {s['LM']}%<br>
+                    • <b>포지션 상태</b>: 현재 <b>[{cur_sig}]</b> 영역 위치<br>
+                    • <b>실전 행동 지침</b>: 장 시작 전 무리한 시장가 추격 매수는 절대 금지합니다. 주가가 {tp_3:,}원 아래로 깊게 밀리지 않는 한, <b>예비 현금 30%를 사수하며 철저하게 관망(홀딩)</b>을 유지하세요.
                 </div>
             </div>
             """, unsafe_allow_html=True)
