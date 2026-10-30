@@ -29,6 +29,22 @@ st.markdown("""
         text-align: center !important; 
         line-height: 1.2 !important;
     }
+    .brief-card {
+        background-color: #FFFFFF;
+        border: 1px solid #E0E0E0;
+        border-radius: 8px;
+        padding: 14px 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+    }
+    .brief-title {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #1565C0;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #EEEEEE;
+        padding-bottom: 4px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -417,18 +433,21 @@ def calculate_indicator_sheet(df_raw):
         'B1': int(closes[-1]),
         'C1': int(vols[-1]),
         'cur_chg': chg[-1] * 100,
+        'vol_ratio': vol_ratio[-1],
+        'date': pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d').iloc[-1],
         'MM': mm_list[-1],
         'PM': pm_list[-1],
         'LM': lm_list[-1],
         'S': s_list[-1],
         'RM': rm_list[-1],
+        'prev_s': s_list[-2] if len(s_list) >= 2 else s_list[-1],
         'current_signal': buy_signals[-1],
         'max_mn': next_high,
         'min_pq': next_low,
         'B7': peak if state == 'UP' else trough,
         'B8': r10(peak * (1.0 - 0.095)) if state == 'UP' else r10(trough * 1.095),
         'B9': r10(peak * (1.0 - 0.045)) if state == 'UP' else r10(trough * 1.045),
-        'state': "상승추세" if state == 'UP' else "하락추세"
+        'state': "상승 파동 진행 중" if state == 'UP' else "하락 파동 진행 중"
     }
     return df_out, summary
 
@@ -443,7 +462,7 @@ kosdaq_val = int(kosdaq_df['Close'].iloc[-1]) if kosdaq_df is not None and not k
 kosdaq_chg = ((kosdaq_df['Close'].iloc[-1] / kosdaq_df['Close'].iloc[-2]) - 1.0) * 100 if kosdaq_df is not None and len(kosdaq_df) >= 2 else 0.0
 
 if stock_code:
-    with st.spinner(f"[{stock_name} ({stock_code})] 1안 정석 분할 방어형 플랜을 적용 중입니다..."):
+    with st.spinner(f"[{stock_name} ({stock_code})] 데이터를 분석 중입니다..."):
         raw_df, _ = get_naver_stock_data(stock_code, count=1500)
 
     if raw_df is not None and not raw_df.empty:
@@ -456,21 +475,23 @@ if stock_code:
 
         current_s_val = s['S']
         cur_sig = s['current_signal']
-        
         max_mn_val = s.get('max_mn', 0)
         min_pq_val = s.get('min_pq', 0)
         
+        # 1안 기준 가격 단계 (기본 1~4차 및 재하락 2차 방어선 목표가)
         four_stages_info = [
             (-25, "1차 신호(5%)"), (-32, "2차 진입(10%)"), (-40, "3차 진입(25%)"), (-55, "4차 강력진입(30%)")
         ]
         
+        target_prices_dict = {}
         target_prices_4step = []
         if max_mn_val > 0 and min_pq_val > 0:
             for s_tgt, name in four_stages_info:
                 tp = r10(max_mn_val + (s_tgt * min_pq_val) / 100.0)
+                target_prices_dict[s_tgt] = tp
                 target_prices_4step.append(f"<b>{name}</b>: <span style='color:#D32F2F;'>{tp:,}원</span> (S≤{s_tgt})")
 
-        # 상단 실전 액션 가이드 브리핑
+        # 상단 실전 액션 가이드 브리핑 (공통)
         if "강력진입구간" in cur_sig:
             action_title = f"🟣 [{cur_sig}] ➔ 4차 승부수 구간 도달!"
             action_desc = "S ≤ -55 1차 바닥권 도달! 4차 기본 비중(30%)을 집행합니다."
@@ -501,8 +522,7 @@ if stock_code:
         <div style="background-color: #F8F9FA; border-left: 6px solid {badge_color}; padding: 14px; border-radius: 8px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
             <h3 style="margin: 0; color: {badge_color}; font-size: 1.1rem;">{action_title}</h3>
             <p style="margin: 6px 0 4px 0; color: #222222; font-size: 0.9rem;">
-                <b>현재 3M — MM: <code>{s['MM']}</code> | PM: <code>{s['PM']}%</code> | LM: <code>{s['LM']}%</code> | S값: <code>{current_s_val}</code> ({s['state']})</b><br>
-                기준 고점: {max_mn_val:,}원 / 기준 저점: {min_pq_val:,}원 | 기준가: {s['B7']:,}원 / 전환가: {s['B8']:,}원
+                <b>현재 핵심 지표 — MM: <code>{s['MM']}</code> | PM: <code>{s['PM']}%</code> | LM: <code>{s['LM']}%</code> | S값: <code>{current_s_val}</code> ({s['state']})</b>
             </p>
             <div style="background-color: #FFFFFF; border: 1px dashed {badge_color}; padding: 8px 10px; border-radius: 6px; margin-top: 8px; font-size: 0.88rem; color: #111;">
                 {action_item}
@@ -510,28 +530,28 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        if target_prices_4step:
-            st.markdown(f"""
-            <div style="background-color: #FFF3E0; border: 1px solid #FFB74D; padding: 10px; border-radius: 8px; margin-bottom: 12px; font-size: 0.85rem; color: #333; line-height: 1.4;">
-                <b>🎯 [1안 기준 주요 진입 목표가]</b><br>
-                {' | '.join(target_prices_4step)}
-            </div>
-            """, unsafe_allow_html=True)
-
         c1, c2, c3, c4 = st.columns(4)
         c1.metric(f"{stock_name} 현재가", f"{s['B1']:,}원", f"{s['cur_chg']:+.2f}%")
         c2.metric("S값 / 3M 요약", f"S: {s['S']}", f"MM:{s['MM']} / PM:{s['PM']} / LM:{s['LM']}")
         c3.metric("코스피 지수", f"{kospi_val:,}", f"{kospi_chg:+.2f}%")
         c4.metric("코스닥 지수", f"{kosdaq_val:,}", f"{kosdaq_chg:+.2f}%")
 
-        # 탭 1: 매수·매도 표 (전체)
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표 (전체)", "🎯 1안 실전 가이드 & 계산기", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
+        # 🔥 탭 구성: 마감 브리핑 탭을 2번째에 신설
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "📊 매수·매도 표 (전체)", 
+            "📢 마감 브리핑", 
+            "🎯 1안 실전 가이드 & 계산기", 
+            "💼 보유 포트폴리오", 
+            "💾 엑셀 다운로드"
+        ])
 
+        # -----------------------------
+        # TAB 1: 매수·매도 표 (전체)
+        # -----------------------------
         with tab1:
             st.caption("📈 엑셀 원본(PPP 시트)과 100% 일치하며 여백 없이 칸에 딱 맞게 정렬된 밀착형 표입니다.")
             df_rev = df_display.iloc[::-1]
 
-            # 🔥 글자 길이에 꼭 맞춘 초밀착 너비 설정 (빈 공간 제거)
             col_configs = {
                 "일자": st.column_config.TextColumn("일자", width=86),
                 "종가(B)": st.column_config.TextColumn("종가", width=68),
@@ -554,12 +574,80 @@ if stock_code:
 
             st.dataframe(
                 style_table(df_rev, df_full_result),
-                use_container_width=False,  # 강제로 늘어나서 생기는 빈 여백 방지
+                use_container_width=False,
                 height=520,
                 column_config=col_configs
             )
 
+        # -----------------------------
+        # TAB 2: 마감 브리핑 전용 탭 (신설)
+        # -----------------------------
         with tab2:
+            st.markdown(f"#### 📢 [{s['date']}] {stock_name} 장 마감 종합 브리핑")
+
+            # 1. 오늘 장 마감 현황
+            mkt_status = "하락 마감" if kosdaq_chg < 0 else "상승 마감"
+            st.markdown(f"""
+            <div class="brief-card">
+                <div class="brief-title">1. 오늘 장 마감 현황</div>
+                <ul style="margin:0; padding-left:20px; font-size:0.88rem; color:#222; line-height:1.6;">
+                    <li><b>종가</b>: {s['B1']:,}원 ({s['cur_chg']:+.2f}%)</li>
+                    <li><b>거래량</b>: {s['C1']:,}주 (전일 대비 {s['vol_ratio']:.2f}배)</li>
+                    <li><b>시장 환경</b>: 코스피 {kospi_chg:+.2f}% / 코스닥 {kosdaq_chg:+.2f}% ({mkt_status})</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 2. 핵심 지표
+            s_diff = current_s_val - s['prev_s']
+            s_diff_str = f"전일 대비 {s_diff:+d}" if s_diff != 0 else "전일과 동일"
+            st.markdown(f"""
+            <div class="brief-card">
+                <div class="brief-title">2. 핵심 지표</div>
+                <ul style="margin:0; padding-left:20px; font-size:0.88rem; color:#222; line-height:1.6;">
+                    <li><b>현재 상태</b>: {s['state']}</li>
+                    <li><b>3M 지표</b>: MM: <code>{s['MM']}</code> | PM: <code>{s['PM']}%</code> | LM: <code>{s['LM']}%</code> | RM: <code>{s['RM']}</code></li>
+                    <li><b>오늘의 S값</b>: <span style="font-weight:900; color:#D32F2F; font-size:1.05rem;">{current_s_val}</span> ({s_diff_str})</li>
+                    <li><b>기준 밴드</b>: 기준 고점 {max_mn_val:,}원 / 기준 저점 {min_pq_val:,}원</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 3. 포지션 및 1안 자금 집행 진단
+            st.markdown(f"""
+            <div class="brief-card">
+                <div class="brief-title">3. 포지션 및 1안 자금 집행 진단</div>
+                <ul style="margin:0; padding-left:20px; font-size:0.88rem; color:#222; line-height:1.6;">
+                    <li><b>현재 단계</b>: <b>[{cur_sig}]</b> 구간 위치</li>
+                    <li><b>신규 진입자</b>: 정해진 분할 목표가 이하 체결 대기 (무리한 추격 매수 금지)</li>
+                    <li><b>기존 보유자 (이미 4차까지 진입된 경우)</b>:
+                        <br>• 아직 1차 신호(S ≥ -25)까지 본격 반등하지 못했으므로 섣부른 손절이나 물타기 금지.
+                        <br>• 남겨둔 <b>예비 현금(30%)은 절대로 먼저 쓰지 않고 100% 안전하게 계좌에 홀딩</b>합니다.
+                    </li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 4. 내일 실전 Action Item & 지정가 예약 가이드
+            tp_3 = target_prices_dict.get(-40, 0)
+            tp_4 = target_prices_dict.get(-55, 0)
+            st.markdown(f"""
+            <div class="brief-card" style="border-left: 5px solid #D32F2F;">
+                <div class="brief-title" style="color:#D32F2F;">4. 내일(다음 영업일) 실전 Action Item & 지정가 예약 가이드</div>
+                <div style="font-size:0.88rem; color:#222; line-height:1.6;">
+                    <b>🎯 다음 영업일 핵심 가격대:</b><br>
+                    • <b>3차 진입 목표가 (S ≤ -40)</b>: <span style="color:#D32F2F; font-weight:bold;">{tp_3:,}원 이하</span> (예비 현금 10% 2차 방어선 대기)<br>
+                    • <b>4차 강력진입 목표가 (S ≤ -55)</b>: <span style="color:#D32F2F; font-weight:bold;">{tp_4:,}원 이하</span> (전저점 이탈 시 최후 방어선 20% 대기)<br><br>
+                    <b>💡 내일의 행동 강령:</b><br>
+                    장 시작 전 무리한 시장가 추격 매수는 절대 금지합니다. 주가가 {tp_3:,}원 아래로 깊게 밀리지 않는 한, <b>예비 현금 30%를 지키며 철저하게 관망(홀딩)</b>을 유지하세요.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # -----------------------------
+        # TAB 3: 1안 실전 가이드 & 계산기
+        # -----------------------------
+        with tab3:
             st.markdown("##### 🎯 [1안. 정석 분할 방어형: 기본 70% + 예비 방어 30% 플랜]")
             total_seed = st.number_input("💰 총 투자 예정 금액 (원)", min_value=100000, max_value=10000000000, value=30000000, step=1000000, format="%d")
 
@@ -602,7 +690,10 @@ if stock_code:
                 })
             st.dataframe(pd.DataFrame(calc_def), use_container_width=True)
 
-        with tab3:
+        # -----------------------------
+        # TAB 4: 보유 포트폴리오
+        # -----------------------------
+        with tab4:
             st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기")
             if 'my_portfolio_items' not in st.session_state:
                 st.session_state.my_portfolio_items = [
@@ -661,7 +752,10 @@ if stock_code:
             fc2.metric("전체 총 평가금액", f"{total_eval_all:,}원", f"{total_pl_rate:+.2f}%")
             fc3.metric("전체 총 평가 손익", f"{total_pl:,}원")
 
-        with tab4:
+        # -----------------------------
+        # TAB 5: 엑셀 다운로드
+        # -----------------------------
+        with tab5:
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_display.to_excel(writer, index=False, sheet_name="PPP")
