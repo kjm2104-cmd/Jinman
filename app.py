@@ -14,17 +14,19 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 모바일 가독성 및 표 칸 넓이 최적화 CSS
+# 모바일 가독성 및 카드 스타일 최적화 CSS
 st.markdown("""
 <style>
     .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
     div[data-testid="stMetricValue"] { font-size: 1.25rem; font-weight: 700; }
     div[data-testid="stMetricLabel"] { font-size: 0.85rem; }
     table dataframe, th, td { font-size: 0.82rem !important; padding: 4px 5px !important; }
+    .plan-box { background-color: #F8F9FA; border-radius: 8px; padding: 12px; margin-bottom: 10px; border-left: 5px solid #1976D2; }
+    .defense-box { background-color: #FFF8E1; border-radius: 8px; padding: 12px; margin-bottom: 10px; border-left: 5px solid #FF8F00; }
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (엑셀 원본 수식 100% 동기화)")
+st.subheader("📈 간편 교대 매매 시스템 (1안 정석 분할 방어형)")
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=300)
@@ -218,7 +220,6 @@ def style_table(df_target, df_full):
                     styles[idx] = 'color: #2E7D32; font-weight: bold; white-space: nowrap;'
         return styles
 
-    # 파동 관련 열들의 소수점(.000000)을 없애고 정수 천단위 콤마 서식 적용
     format_dict = {
         '종가(B)': '{:,}',
         '거래량(F)': '{:,}',
@@ -233,7 +234,7 @@ def style_table(df_target, df_full):
 
     return df_target.style.apply(lambda row: color_styler(row.name, row), axis=1).format(format_dict, na_rep="-")
 
-# 엑셀 파일(0.ETF_233740KODEX 코스닥150 레버리지.xlsx)의 PPP 시트 수식 완벽 구현
+# 엑셀 원본(PPP 시트) 수식 계산 함수
 def calculate_indicator_sheet(df_raw):
     df = df_raw.copy().reset_index()
     closes = pd.to_numeric(df['Close'], errors='coerce').ffill().values
@@ -433,7 +434,7 @@ kosdaq_val = int(kosdaq_df['Close'].iloc[-1]) if kosdaq_df is not None and not k
 kosdaq_chg = ((kosdaq_df['Close'].iloc[-1] / kosdaq_df['Close'].iloc[-2]) - 1.0) * 100 if kosdaq_df is not None and len(kosdaq_df) >= 2 else 0.0
 
 if stock_code:
-    with st.spinner(f"[{stock_name} ({stock_code})] 엑셀 원본 수식으로 파동을 계산 중입니다..."):
+    with st.spinner(f"[{stock_name} ({stock_code})] 1안 정석 분할 방어형 플랜을 적용 중입니다..."):
         raw_df, _ = get_naver_stock_data(stock_code, count=1500)
 
     if raw_df is not None and not raw_df.empty:
@@ -450,40 +451,42 @@ if stock_code:
         max_mn_val = s.get('max_mn', 0)
         min_pq_val = s.get('min_pq', 0)
         
+        # 1안 기준 가격 단계 (기본 1~4차 및 재하락 2차 방어선 목표가)
         four_stages_info = [
-            (-25, "1차 신호"), (-32, "2차 진입구간"), (-40, "3차 진입구간"), (-55, "4차 강력진입구간")
+            (-25, "1차 신호(5%)"), (-32, "2차 진입(10%)"), (-40, "3차 진입(25%)"), (-55, "4차 강력진입(30%)")
         ]
         
         target_prices_4step = []
         if max_mn_val > 0 and min_pq_val > 0:
             for s_tgt, name in four_stages_info:
                 tp = r10(max_mn_val + (s_tgt * min_pq_val) / 100.0)
-                target_prices_4step.append(f"<b>{name}</b>: <span style='color:#D32F2F;'>{tp:,}원 이하</span> (S≤{s_tgt})")
+                target_prices_4step.append(f"<b>{name}</b>: <span style='color:#D32F2F;'>{tp:,}원</span> (S≤{s_tgt})")
 
+        # 상단 실전 액션 가이드 브리핑
         if "강력진입구간" in cur_sig:
-            action_title = f"🟣 [{cur_sig}] ➔ 최후 승부수 구간 도달!"
-            action_desc = "S ≤ -55 최하단 바닥에 도달했습니다. 모든 화력을 집중할 때입니다."
-            action_item = "🚨 **[오늘의 Action Item]**: 4차 강력진입구간 비중(40%) 전액 집행 및 지정가 매수 세팅"
+            action_title = f"🟣 [{cur_sig}] ➔ 4차 승부수 구간 도달!"
+            action_desc = "S ≤ -55 1차 바닥권 도달! 4차 기본 비중(30%)을 집행합니다."
+            action_item = "💡 **[1안 행동 수칙]**: 4차 비중(30%) 집행 완료 후, 남은 **예비 현금 30%는 반드시 계좌에 홀딩**하세요!"
             badge_color = "#7B1FA2"
         elif "진입구간" in cur_sig:
             action_title = f"🔴 [{cur_sig}] ➔ 분할 매수 진행 구간!"
-            action_desc = "하락이 깊어져 점진적으로 비중을 담아가는 구간입니다."
-            action_item = "📌 **[오늘의 Action Item]**: 해당 단계별 목표가 이하로 내려올 때 분할 매수 비중 체결 대기"
+            action_desc = "하락이 진행되어 정해진 비중을 차분하게 모아가는 구간입니다."
+            action_item = "💡 **[1안 행동 수칙]**: 단계별 목표가 이하에서만 정해진 비중(2차 10%, 3차 25%)만큼 매수 체결 대기"
             badge_color = "#D32F2F"
         elif "신호" in cur_sig:
             action_title = f"🟠 [{cur_sig}] ➔ 하락 초입 탐색 신호!"
-            action_desc = "본격적인 진입 전, 첫 번째 신호가 포착되었습니다."
-            action_item = "👀 **[오늘의 Action Item]**: 무리한 매수 자제, 1차 탐색 소액(10%)만 열어두고 관망 강화"
+            action_desc = "본격 진입 전 첫 신호 포착 구간입니다."
+            action_item = "💡 **[1안 행동 수칙]**: 1차 탐색 소액(5%)만 체결하거나, 이미 물량이 있다면 추가 매수 없이 관망"
             badge_color = "#FF8F00"
         elif cur_sig == "매도 추천":
             action_title = f"🔵 [{cur_sig}] ➔ 지표 회복! 수익 실현 검토"
             action_desc = "S값이 안전지대로 회복되었습니다."
-            action_item = "💰 **[오늘의 Action Item]**: 평단가 위 익절 타이밍 포착 시 미련 없이 현금화 및 수확"
+            action_item = "💡 **[1안 행동 수칙]**: 평단가 위 익절 타이밍 포착 시 미련 없이 현금화하여 다음 농사 탄약 확보"
             badge_color = "#1976D2"
         else:
             action_title = "🟢 [관망] ➔ 안전 구간"
-            action_desc = "현금 100%를 유지하며 기회를 기다립니다."
-            action_item = "🛡️ **[오늘의 Action Item]**: 현금 100% 사수! 지수가 흔들려도 차분하게 기회를 기다리세요."
+            action_desc = "현금 비중을 유지하며 기회를 기다리는 안전 지대입니다."
+            action_item = "💡 **[1안 행동 수칙]**: 불필요한 매수 금지! 다음 파동 신호가 올 때까지 예수금을 안전하게 지키세요."
             badge_color = "#2E7D32"
 
         st.markdown(f"""
@@ -491,7 +494,7 @@ if stock_code:
             <h3 style="margin: 0; color: {badge_color}; font-size: 1.1rem;">{action_title}</h3>
             <p style="margin: 6px 0 4px 0; color: #222222; font-size: 0.9rem;">
                 <b>현재 3M — MM: <code>{s['MM']}</code> | PM: <code>{s['PM']}%</code> | LM: <code>{s['LM']}%</code> | S값: <code>{current_s_val}</code> ({s['state']})</b><br>
-                기준 고점: {max_mn_val:,}원 / 기준 저점: {min_pq_val:,}원 | 기준가(B7): {s['B7']:,}원 / 전환가(B8): {s['B8']:,}원 / 1차가격(B9): {s['B9']:,}원
+                기준 고점: {max_mn_val:,}원 / 기준 저점: {min_pq_val:,}원 | 기준가: {s['B7']:,}원 / 전환가: {s['B8']:,}원
             </p>
             <div style="background-color: #FFFFFF; border: 1px dashed {badge_color}; padding: 8px 10px; border-radius: 6px; margin-top: 8px; font-size: 0.88rem; color: #111;">
                 {action_item}
@@ -502,7 +505,7 @@ if stock_code:
         if target_prices_4step:
             st.markdown(f"""
             <div style="background-color: #FFF3E0; border: 1px solid #FFB74D; padding: 10px; border-radius: 8px; margin-bottom: 12px; font-size: 0.85rem; color: #333; line-height: 1.4;">
-                <b>🎯 [4단계 지정가 세팅 가이드] 다음 영업일 주요 도달 목표가</b><br>
+                <b>🎯 [1안 기준 주요 진입 목표가]</b><br>
                 {' | '.join(target_prices_4step)}
             </div>
             """, unsafe_allow_html=True)
@@ -513,36 +516,55 @@ if stock_code:
         c3.metric("코스피 지수", f"{kospi_val:,}", f"{kospi_chg:+.2f}%")
         c4.metric("코스닥 지수", f"{kosdaq_val:,}", f"{kosdaq_chg:+.2f}%")
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표 (전체)", "🎯 4단계 가이드 & 자동금액", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
+        tab1, tab2, tab3, tab4 = st.tabs(["🎯 1안 실전 가이드 & 계산기", "📊 매수·매도 표 (전체)", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 엑셀 원본(PPP 시트)과 동일하게 모든 파동 가격이 천 단위 콤마 정수로 깔끔하게 표시됩니다.")
-            df_rev = df_display.iloc[::-1]
-            st.dataframe(style_table(df_rev, df_full_result), use_container_width=True, height=520)
-
-        with tab2:
-            st.markdown("##### 🎯 [4단계 핵심 매수 가이드 & 자동금액 계산기]")
+            st.markdown("##### 🎯 [1안. 정석 분할 방어형: 기본 70% + 예비 방어 30% 플랜]")
             total_seed = st.number_input("💰 총 투자 예정 금액 (원)", min_value=100000, max_value=10000000000, value=30000000, step=1000000, format="%d")
 
-            four_step_rows = [
-                {"단계": "🟠 1차 신호", "조건": "S ≤ -25", "비중": 0.10, "가이드": "하락 초입 ➔ 신호 감지 (관망 또는 소액 탐색)"},
-                {"단계": "🔴 2차 진입구간", "조건": "S ≤ -32", "비중": 0.20, "가이드": "하락 진행 ➔ 2차 진입 시작"},
-                {"단계": "🔴 3차 진입구간", "조건": "S ≤ -40", "비중": 0.30, "가이드": "하락 심화 ➔ 3차 비중 확대"},
-                {"단계": "🟣 4차 강력진입구간", "조건": "S ≤ -55", "비중": 0.40, "가이드": "🚨 **[최후 승부수]** 바닥 올인 강력진입"},
+            st.markdown("###### 🔹 1단계: 기본 4단계 분할 매수 (총 70% 집행)")
+            base_plan = [
+                {"단계": "🟠 1차 신호", "조건": "S ≤ -25", "비중": 0.05, "가이드": "하락 초입 ➔ 소액(5%) 탐색 진입"},
+                {"단계": "🔴 2차 진입구간", "조건": "S ≤ -32", "비중": 0.10, "가이드": "하락 진행 ➔ 2차 비중(10%) 체결"},
+                {"단계": "🔴 3차 진입구간", "조건": "S ≤ -40", "비중": 0.25, "가이드": "하락 심화 ➔ 3차 비중(25%) 확대"},
+                {"단계": "🟣 4차 강력진입구간", "조건": "S ≤ -55", "비중": 0.30, "가이드": "🚨 **[1차 바닥]** 4차 승부수(30%) 집행 완료"}
             ]
-
-            calc_data = []
-            for row in four_step_rows:
+            
+            calc_base = []
+            for row in base_plan:
                 amt = int(total_seed * row["비중"])
-                calc_data.append({
-                    "매수 단계": row["단계"],
+                calc_base.append({
+                    "매수 구분": row["단계"],
                     "S값 조건": row["조건"],
                     "투입 비중": f"{int(row['비중']*100)}%",
-                    "자동 계산 투입금액": f"{amt:,}원",
-                    "행동 가이드": row["가이드"]
+                    "배정 금액": f"{amt:,}원",
+                    "실전 행동 가이드": row["가이드"]
                 })
+            st.dataframe(pd.DataFrame(calc_base), use_container_width=True)
 
-            st.dataframe(pd.DataFrame(calc_data), use_container_width=True)
+            st.markdown("---")
+            st.markdown("###### 🛡️ 2단계: 매도 없이 재하락 시 [예비 현금 30%] 방어선 집행")
+            defense_plan = [
+                {"구분": "🛡️ 2차 방어선", "조건": "재하락 S ≤ -40", "비중": 0.10, "가이드": "4차 진입 후 익절 없이 다시 밀릴 때 ➔ 예비 현금 10% 1차 방어 투입"},
+                {"구분": "🚨 최후 방어선", "조건": "재하락 S ≤ -55 (전저점 이탈)", "비중": 0.20, "가이드": "극단적 언더슈팅 시 ➔ 남은 예비 현금 20% 전액 투입하여 평단가 최저 하강"}
+            ]
+            
+            calc_def = []
+            for row in defense_plan:
+                amt = int(total_seed * row["비중"])
+                calc_def.append({
+                    "방어선 구분": row["구분"],
+                    "발동 조건": row["조건"],
+                    "투입 비중": f"{int(row['비중']*100)}%",
+                    "배정 금액": f"{amt:,}원",
+                    "실전 행동 가이드": row["가이드"]
+                })
+            st.dataframe(pd.DataFrame(calc_def), use_container_width=True)
+
+        with tab2:
+            st.caption("📈 엑셀 원본(PPP 시트)과 100% 일치하며 모든 변곡점 가격이 정수로 표시됩니다.")
+            df_rev = df_display.iloc[::-1]
+            st.dataframe(style_table(df_rev, df_full_result), use_container_width=True, height=520)
 
         with tab3:
             st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기")
