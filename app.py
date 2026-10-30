@@ -23,7 +23,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (4단계 핵심 압축 버전)")
+st.subheader("📈 간편 교대 매매 시스템 (과거 데이터 고정 안정형)")
 
 # 네이버 금융 일별 시세 크롤링 함수 (개별 종목 및 지수 공용)
 @st.cache_data(ttl=3600)
@@ -206,12 +206,9 @@ def style_table(df_target, df_full):
 
     return df_target.style.apply(lambda row: color_styler(row.name, row), axis=1).format({'종가(B)': '{:,}', '중심선(D)': '{:,}', '거래량(E)': '{:,}', '거래비율(F)': '{:.2f}'}, na_rep="-")
 
+# 🔥 [핵심 수정] 과거 데이터 시점별 독립 누적 계산 함수 (어제 계산된 S값이 오늘 바뀌지 않도록 고정)
 def calculate_indicator_sheet(df_raw):
     df = df_raw.copy().reset_index()
-    
-    opens = pd.to_numeric(df['Open'], errors='coerce').ffill().values
-    highs = pd.to_numeric(df['High'], errors='coerce').ffill().values
-    lows = pd.to_numeric(df['Low'], errors='coerce').ffill().values
     closes = pd.to_numeric(df['Close'], errors='coerce').ffill().values
     vols = pd.to_numeric(df['Volume'], errors='coerce').fillna(0).values
     dates = pd.to_datetime(df['Date']).values
@@ -219,6 +216,7 @@ def calculate_indicator_sheet(df_raw):
 
     chg = np.zeros(n)
     chg[1:] = (closes[1:] / np.where(closes[:-1] == 0, 1, closes[:-1])) - 1.0
+    
     ema = np.zeros(n); ema[0] = closes[0]
     for i in range(1, n): ema[i] = round((ema[i - 1] * 6.0 + closes[i]) / 7.0)
 
@@ -228,61 +226,56 @@ def calculate_indicator_sheet(df_raw):
     mm_list, pm_list, lm_list, s_list, rm_list = [], [], [], [], []
     buy_signals = []
 
-    state = 'UP'
-    peak = int(closes[0]) if n > 0 else 0
-    trough = int(closes[0]) if n > 0 else 0
-    first_M = int(closes[0]) if n > 0 else 0
-    up_phase = 'M'; down_phase = 'Q'
-    M8, N8, P8, Q8 = peak, peak, peak, peak
-
-    max_mn, min_pq = peak, trough
-
+    # 각 날짜별(i시점)로 과거 데이터(0 ~ i)만 잘라서 독립적으로 파동을 시뮬레이션하여 고정
     for i in range(n):
-        p = int(round(closes[i]))
+        sub_closes = closes[:i+1]
+        sub_n = len(sub_closes)
         
-        if state == 'UP':
-            if p > peak:
-                peak = p
-                l5_target = r10(first_M * 1.045)
-                n_trigger = min(l5_target, N8) if N8 > 0 else l5_target
-                up_phase = 'N' if (up_phase == 'N' or p >= n_trigger) else 'M'
-            elif p <= r10(peak * (1.0 - 0.095)):
-                N8 = peak if up_phase == 'N' else N8
-                M8 = peak if up_phase == 'M' else M8
-                state = 'DOWN'; trough = p
-        else:
-            if p < trough: trough = p
-            elif p >= r10(trough * 1.095):
-                P8 = trough if down_phase == 'P' else P8
-                Q8 = trough if down_phase == 'Q' else Q8
-                state = 'UP'; peak = p; first_M = p
+        state = 'UP'
+        peak = int(sub_closes[0]) if sub_n > 0 else 0
+        trough = int(sub_closes[0]) if sub_n > 0 else 0
+        first_M = int(sub_closes[0]) if sub_n > 0 else 0
+        up_phase = 'M'; down_phase = 'Q'
+        M8, N8, P8, Q8 = peak, peak, peak, peak
+
+        for j in range(sub_n):
+            p = int(round(sub_closes[j]))
+            if state == 'UP':
+                if p > peak:
+                    peak = p
+                    l5_target = r10(first_M * 1.045)
+                    n_trigger = min(l5_target, N8) if N8 > 0 else l5_target
+                    up_phase = 'N' if (up_phase == 'N' or p >= n_trigger) else 'M'
+                elif p <= r10(peak * (1.0 - 0.095)):
+                    N8 = peak if up_phase == 'N' else N8
+                    M8 = peak if up_phase == 'M' else M8
+                    state = 'DOWN'; trough = p
+            else:
+                if p < trough: trough = p
+                elif p >= r10(trough * 1.095):
+                    P8 = trough if down_phase == 'P' else P8
+                    Q8 = trough if down_phase == 'Q' else Q8
+                    state = 'UP'; peak = p; first_M = p
 
         max_mn = max(M8, N8); min_pq = min(P8, Q8)
+        cur_p = int(round(sub_closes[-1]))
+        
         mm = int(round((max_mn / min_pq - 1.0) * 100)) if min_pq > 0 else 0
-        pm = int(round((p / max_mn - 1.0) * 100)) if max_mn > 0 else 0
-        lm = int(round((p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
+        pm = int(round((cur_p / max_mn - 1.0) * 100)) if max_mn > 0 else 0
+        lm = int(round((cur_p / min_pq - 1.0) * 100)) if min_pq > 0 else 0
         s_val = lm - mm
 
-        # 🔥 요청하신 4단계 매매 구조 매핑 (4차는 S ≤ -55)
         if s_val >= 0:
-            if s_val >= -15:
-                sig = "매도 추천"
-            else:
-                sig = "관망"
+            sig = "매도 추천" if s_val >= -15 else "관망"
         else:
-            if s_val <= -55:
-                sig = "4차 강력진입구간"
-            elif s_val <= -40:
-                sig = "3차 진입구간"
-            elif s_val <= -32:
-                sig = "2차 진입구간"
-            elif s_val <= -25:
-                sig = "1차 신호"
-            else:
-                sig = "관망"
+            if s_val <= -55: sig = "4차 강력진입구간"
+            elif s_val <= -40: sig = "3차 진입구간"
+            elif s_val <= -32: sig = "2차 진입구간"
+            elif s_val <= -25: sig = "1차 신호"
+            else: sig = "관망"
 
         d_cur = pd.Timestamp(dates[i])
-        w_slice = closes[:i+1][pd.to_datetime(dates[:i+1]) >= (d_cur - pd.DateOffset(years=1))]
+        w_slice = sub_closes[pd.to_datetime(dates[:i+1]) >= (d_cur - pd.DateOffset(years=1))]
         rm = int(round((w_slice.max() / w_slice.min() - 1.0) * 100)) if len(w_slice) > 0 and w_slice.min() > 0 else 0
 
         mm_list.append(mm); pm_list.append(pm); lm_list.append(lm)
@@ -332,7 +325,6 @@ if stock_code:
         max_mn_val = s.get('max_mn', 0)
         min_pq_val = s.get('min_pq', 0)
         
-        # 🔥 4단계 핵심 목표가 실시간 자동 계산 (-25%, -32%, -40%, -55%)
         four_stages_info = [
             (-25, "1차 신호"), (-32, "2차 진입구간"), (-40, "3차 진입구간"), (-55, "4차 강력진입구간")
         ]
@@ -373,7 +365,6 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 🔥 4단계 지정가 세팅 가이드 박스
         if target_prices_4step:
             st.markdown(f"""
             <div style="background-color: #FFF3E0; border: 1px solid #FFB74D; padding: 10px; border-radius: 8px; margin-bottom: 12px; font-size: 0.85rem; color: #333; line-height: 1.4;">
@@ -391,7 +382,7 @@ if stock_code:
         tab1, tab2, tab3, tab4 = st.tabs(["📊 매수·매도 표", "🎯 4단계 가이드 & 자동금액", "💼 보유 포트폴리오", "💾 엑셀 다운로드"])
 
         with tab1:
-            st.caption("📈 새롭게 개편된 4단계 핵심 압축 마스터 표입니다.")
+            st.caption("📈 과거 데이터가 완벽하게 고정된 실전 마스터 표입니다.")
             df_rev = df_result.iloc[::-1]
             st.dataframe(style_table(df_rev, df_result), use_container_width=True, height=520)
 
@@ -399,7 +390,6 @@ if stock_code:
             st.markdown("##### 🎯 [4단계 핵심 매수 가이드 & 자동금액 계산기]")
             total_seed = st.number_input("💰 총 투자 예정 금액 (원)", min_value=100000, max_value=10000000000, value=30000000, step=1000000, format="%d")
 
-            # 4단계 비중 배분 (1차 10%, 2차 20%, 3차 30%, 4차 40%)
             four_step_rows = [
                 {"단계": "🟠 1차 신호", "조건": "S ≤ -25", "비중": 0.10, "가이드": "하락 초입 ➔ 신호 감지 (관망 또는 소액 탐색)"},
                 {"단계": "🔴 2차 진입구간", "조건": "S ≤ -32", "비중": 0.20, "가이드": "하락 진행 ➔ 2차 진입 시작"},
@@ -456,7 +446,7 @@ if stock_code:
                 with cols[4]:
                     disp_name = item["confirmed_name"] if item["confirmed_name"] else "종목 미조회"
                     st.markdown(f"<div style='font-size: 0.75rem; color: #555;'><b>{disp_name}</b></div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='font-size: 1.0rem; font-weight: bold; color: #D32F2F;>{live_curr_price:,}원</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size: 1.0rem; font-weight: bold; color: #D32F2F;'>{live_curr_price:,}원</div>", unsafe_allow_html=True)
                 with cols[5]:
                     st.markdown("<div style='margin-top: 22px;'></div>", unsafe_allow_html=True)
                     if st.button("❌", key=f"del_mp_{item['id']}"): items_to_delete.append(item)
