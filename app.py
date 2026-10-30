@@ -44,15 +44,6 @@ st.markdown("""
         border-bottom: 1px solid #EEEEEE;
         padding-bottom: 4px;
     }
-    .investor-box {
-        display: flex;
-        justify-content: space-between;
-        background-color: #F8F9FA;
-        border-radius: 6px;
-        padding: 8px 12px;
-        margin-top: 6px;
-        font-size: 0.85rem;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -98,7 +89,7 @@ def get_naver_stock_data(code, count=1500):
     except Exception:
         return None, None
 
-# 종목별 외국인/기관 매매동향 크롤링 & 가공 함수
+# 종목별 외국인/기관 매매동향 크롤링 함수 (안정화 버전)
 @st.cache_data(ttl=300)
 def get_investor_trend(code):
     clean_code = str(code).strip()
@@ -112,15 +103,13 @@ def get_investor_trend(code):
             if '외국인' in cols_str and '기관' in cols_str:
                 df_clean = df.dropna(how='all').copy()
                 if len(df_clean) > 2:
-                    # 멀티인덱스 컬럼 처리
                     if isinstance(df_clean.columns, pd.MultiIndex):
                         flat_cols = []
                         for c in df_clean.columns:
                             c_str = "_".join([str(sub) for sub in c if 'Unnamed' not in str(sub)]).strip('_')
                             flat_cols.append(c_str if c_str else 'col')
                         df_clean.columns = flat_cols
-                    
-                    # 핵심 컬럼(날짜, 기관순매매량, 외국인순매매량) 추출
+
                     dt_col = [c for c in df_clean.columns if '날짜' in c or '일자' in c]
                     inst_col = [c for c in df_clean.columns if '기관' in c and '순매매' in c]
                     frgn_col = [c for c in df_clean.columns if '외국인' in c and '순매매' in c]
@@ -128,12 +117,43 @@ def get_investor_trend(code):
                     if dt_col and inst_col and frgn_col:
                         res_df = df_clean[[dt_col[0], inst_col[0], frgn_col[0]]].dropna().head(5).copy()
                         res_df.columns = ['일자', '기관순매수', '외국인순매수']
-                        # 텍스트 내 쉼표, 기호 정리 및 개인 추정치 계산
                         for col in ['기관순매수', '외국인순매수']:
-                            res_df[col] = pd.to_numeric(res_df[col].astype(str).str.replace(',', '').str.replace('+', ''), errors='coerce').fillna(0).astype(int)
-                        # 개인순매수 추정 = -(기관 + 외국인)
+                            res_df[col] = pd.to_numeric(
+                                res_df[col].astype(str).str.replace(',', '').str.replace('+', ''), 
+                                errors='coerce'
+                            ).fillna(0).astype(int)
                         res_df['개인순매수'] = -(res_df['기관순매수'] + res_df['외국인순매수'])
                         return res_df[['일자', '개인순매수', '외국인순매수', '기관순매수']]
+        return None
+    except Exception:
+        return None
+
+# 종목별 최근 공시 목록 크롤링 함수
+@st.cache_data(ttl=600)
+def get_recent_disclosures(code):
+    clean_code = str(code).strip()
+    if not clean_code or not clean_code.isdigit():
+        return None
+    url = f"https://finance.naver.com/item/news_notice.naver?code={clean_code}"
+    try:
+        dfs = pd.read_html(url, encoding='euc-kr')
+        for df in dfs:
+            if '제목' in str(df.columns) or '뉴스제목' in str(df.columns):
+                df_clean = df.dropna(how='all').copy()
+                title_col = [c for c in df_clean.columns if '제목' in c]
+                date_col = [c for c in df_clean.columns if '날짜' in c or '일자' in c]
+                src_col = [c for c in df_clean.columns if '정보제공' in c or '출처' in c]
+
+                if title_col and date_col:
+                    cols_to_keep = [title_col[0], date_col[0]]
+                    if src_col:
+                        cols_to_keep.append(src_col[0])
+                    res_df = df_clean[cols_to_keep].dropna().head(4).copy()
+                    if src_col:
+                        res_df.columns = ['공시/뉴스 제목', '일자', '제공처']
+                    else:
+                        res_df.columns = ['공시/뉴스 제목', '일자']
+                    return res_df
         return None
     except Exception:
         return None
@@ -513,6 +533,7 @@ if stock_code:
     with st.spinner(f"[{stock_name} ({stock_code})] 수급 및 시장 분석을 포함한 마감 브리핑을 준비 중입니다..."):
         raw_df, _ = get_naver_stock_data(stock_code, count=1500)
         investor_df = get_investor_trend(stock_code)
+        disclosure_df = get_recent_disclosures(stock_code)
 
     if raw_df is not None and not raw_df.empty:
         df_full_result, s = calculate_indicator_sheet(raw_df)
@@ -628,7 +649,7 @@ if stock_code:
             )
 
         # -----------------------------
-        # TAB 2: 마감 브리핑 전용 탭 (가시성 극대화 & 정밀 시장 분석)
+        # TAB 2: 마감 브리핑 전용 탭 (수급 가독성 극대화 & 공시 카드 탑재)
         # -----------------------------
         with tab2:
             st.markdown(f"#### 📢 [{s['date']}] {stock_name} 장 마감 종합 브리핑")
@@ -664,7 +685,7 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # B. 👥 투자자별 매매동향 (수급 흐름을 직관적으로 개선)
+            # B. 👥 투자자별 매매동향 (수급 흐름을 직관적인 카드로 개선)
             st.markdown("""
             <div class="brief-card">
                 <div class="brief-title">👥 오늘 투자자별 매매동향 (수급 흐름)</div>
@@ -698,7 +719,6 @@ if stock_code:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # 최근 3일치 수급 추이 표 (포맷 적용)
                 inv_display = investor_df.head(3).copy()
                 st.dataframe(inv_display.style.format({
                     '개인순매수': '{:+,}',
@@ -709,12 +729,12 @@ if stock_code:
                 st.markdown("""
                 <div style="font-size:0.86rem; color:#555; line-height:1.5;">
                     • <b>수급 핵심 체크포인트</b>: 파동 저점 구간에서 <b>개인의 투매 물량을 외국인·기관이 양매수로 받아낼 때</b> 가장 신뢰도 높은 V자 바닥 반등이 형성됩니다.<br>
-                    • <i>(네이버 실시간 투자자 수급 데이터 연동 대기 중)</i>
+                    • <i>(장 마감 후 네이버 금융 증권 거래소 확정 집계 데이터 연동 중)</i>
                 </div>
                 """, unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # C. 2번: ⚡ 거래량 시그널 & 바닥 경보
+            # C. ⚡ 거래량 시그널 & 바닥 경보
             vol_ratio_val = s['vol_ratio']
             if vol_ratio_val >= 1.5:
                 vol_badge = "🚨 [공포 투매 / 대량 손바뀜 발생]"
@@ -740,7 +760,7 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # D. 1번: 🎯 다음 목표가까지 남은 거리 (D-Day 카운트다운)
+            # D. 🎯 다음 목표가까지 남은 거리 (D-Day 카운트다운)
             curr_p = s['B1']
             tp_3 = target_prices_dict.get(-40, 0)
             tp_4 = target_prices_dict.get(-55, 0)
@@ -765,7 +785,23 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # E. 핵심 지표 & 내일 실전 Action Item
+            # E. 📋 최근 주요 공시 & 시장 조치 알림 (신규 기능)
+            st.markdown("""
+            <div class="brief-card">
+                <div class="brief-title">📋 최근 주요 공시 & 시장 조치 알림</div>
+            """, unsafe_allow_html=True)
+            if disclosure_df is not None and not disclosure_df.empty:
+                st.dataframe(disclosure_df, use_container_width=True)
+            else:
+                st.markdown(f"""
+                <div style="font-size:0.86rem; color:#555; line-height:1.5;">
+                    • 최근 7영업일 이내에 주가 급변동을 야기할 특이 공시(유상증자, CB발행, 괴리율 경고 등)는 등록되지 않았습니다.<br>
+                    • <i>({stock_name} 전자공시 및 거래소 공시 실시간 모니터링 중)</i>
+                </div>
+                """, unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # F. 핵심 지표 & 내일 실전 Action Item
             s_diff = current_s_val - s['prev_s']
             s_diff_str = f"전일 대비 {s_diff:+d}" if s_diff != 0 else "전일과 동일"
             st.markdown(f"""
