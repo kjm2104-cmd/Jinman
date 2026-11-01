@@ -8,7 +8,7 @@ from xml.etree import ElementTree as ET
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
-    page_title="간편 교대 매매 분석기 Pro",
+    page_title="매매 시스템 Pro",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -47,7 +47,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 간편 교대 매매 시스템 (1안 정석 분할 방어형)")
+# 📌 상단 제목 간소화 반영
+st.subheader("📈 매매 시스템")
 
 # 네이버 금융 일별 시세 크롤링 함수 (데이터 정제 & 중복 제거 보강)
 @st.cache_data(ttl=300)
@@ -206,10 +207,11 @@ def resolve_code_and_name(user_str):
 with st.form(key="search_form"):
     col_in1, col_in2, col_in3 = st.columns([2, 1, 1])
     with col_in1:
+        # 📌 입력 안내 문구 간소화 반영
         user_input = st.text_input(
             "🔍 조회할 메인 종목 또는 종목코드 입력",
             value="233740",
-            placeholder="예: 삼성전자, 피엔티 또는 233740"
+            placeholder="예: 삼성전자, 233740"
         ).strip()
     with col_in2:
         years_back = st.selectbox("표시 기간 (엑셀 기본: 2년 고정)", options=[1, 2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
@@ -658,7 +660,7 @@ if stock_code:
             )
 
         # -----------------------------
-        # TAB 2: 마감 브리핑 전용 탭 (4가지 종합 고도화 반영)
+        # TAB 2: 마감 브리핑 전용 탭
         # -----------------------------
         with tab2:
             st.markdown(f"#### 📢 [{s['date']}] {stock_name} 장 마감 종합 브리핑")
@@ -694,12 +696,11 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # 2. 🕯️ [신규 1번] 당일 캔들 형태 & 꼬리 분석 (바닥 반등 시그널)
+            # 2. 🕯️ 당일 캔들 형태 & 꼬리 분석
             o_p, h_p, l_p, c_p = s['Open'], s['High'], s['Low'], s['B1']
             body_size = abs(c_p - o_p)
             candle_range = max(1, h_p - l_p)
             lower_shadow = min(o_p, c_p) - l_p
-            upper_shadow = h_p - max(o_p, c_p)
 
             if lower_shadow / candle_range >= 0.45 and (lower_shadow >= body_size * 1.5):
                 candle_type = "🔨 [아래꼬리 망치형 / 저가 매수세 유입]"
@@ -833,7 +834,7 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # 6. 📉 [신규 3번] 최근 5영업일 핵심 지표(S값) 궤적 추적
+            # 6. 📉 최근 5영업일 핵심 지표(S값) 궤적 추적
             recent_5 = df_full_result.tail(5).copy()
             s_traj_html = " ➔ ".join([f"<b>{row['일자'][5:]}</b> (S: <code>{row['S']}</code>)" for _, row in recent_5.iterrows()])
             s_diff_5 = recent_5['S'].iloc[-1] - recent_5['S'].iloc[0]
@@ -849,7 +850,7 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # 7. 🧮 [신규 2번] 내 계좌 실전 탈출 시뮬레이터 (방어선 추가 매수 시 평단가 변화)
+            # 7. 🧮 내 계좌 실전 탈출 시뮬레이터
             my_port_item = None
             if 'my_portfolio_items' in st.session_state:
                 for itm in st.session_state.my_portfolio_items:
@@ -862,7 +863,6 @@ if stock_code:
                 curr_my_price = my_port_item['avg_price']
                 curr_eval_pct = ((curr_p / curr_my_price) - 1.0) * 100 if curr_my_price > 0 else 0
                 
-                # 가상 3차 방어선(시드의 10% 가정, 300만원 분량 매수 시뮬레이션)
                 add_budget_3 = 3000000
                 add_qty_3 = int(add_budget_3 / tp_3) if tp_3 > 0 else 0
                 sim_price_3 = int((curr_my_qty * curr_my_price + add_qty_3 * tp_3) / (curr_my_qty + add_qty_3)) if (curr_my_qty + add_qty_3) > 0 else curr_my_price
@@ -906,7 +906,7 @@ if stock_code:
                 """, unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # 9. 🧭 [신규 4번] 내일 장 시작 전 3대 체크포인트 (내일 08:50 행동 요강)
+            # 9. 🧭 내일 장 시작 전 3대 체크포인트 (내일 08:50 행동 요강)
             st.markdown(f"""
             <div class="brief-card" style="border-left: 5px solid #D32F2F; background-color: #FFF8E1;">
                 <div class="brief-title" style="color: #D32F2F;">9. 🧭 내일 장 시작 전 3대 체크포인트 (내일 08:50 행동 요강)</div>
