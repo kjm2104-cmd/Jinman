@@ -47,7 +47,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈  매매 시스템 ")
+st.subheader("📈 간편 교대 매매 시스템 (1안 정석 분할 방어형)")
 
 # 네이버 금융 일별 시세 크롤링 함수 (데이터 정제 & 중복 제거 보강)
 @st.cache_data(ttl=300)
@@ -209,7 +209,7 @@ with st.form(key="search_form"):
         user_input = st.text_input(
             "🔍 조회할 메인 종목 또는 종목코드 입력",
             value="233740",
-            placeholder="예: 삼성전자, 또는 233740"
+            placeholder="예: 삼성전자, 피엔티 또는 233740"
         ).strip()
     with col_in2:
         years_back = st.selectbox("표시 기간 (엑셀 기본: 2년 고정)", options=[1, 2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
