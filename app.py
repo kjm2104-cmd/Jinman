@@ -53,25 +53,31 @@ st.markdown("""
 
 st.subheader("📈 매매 시스템")
 
-# 포트폴리오 & 계좌 정보(원금, 예수금) 영구 저장/불러오기 함수
+# 포트폴리오 & 거래 일지 영구 저장/불러오기 함수
 PORTFOLIO_FILE = "portfolio_data.json"
 
 def load_saved_portfolio():
     default_data = {
-        "user_principal": 30000000,  # 기본 내 투자 원금 (예: 3천만원)
-        "user_cash": 10000000,       # 기본 예수금 (예: 1천만원)
+        "user_principal": 30000000,
+        "user_cash": 10000000,
+        "realized_pnl": 0,
         "items": [
             {"id": 1, "input_val": "233740", "confirmed_code": "233740", "confirmed_name": "KODEX 코스닥150레버리지", "qty": 5717, "avg_price": 5330},
             {"id": 2, "input_val": "251340", "confirmed_code": "251340", "confirmed_name": "KODEX 코스닥150선물인버스", "qty": 0, "avg_price": 0}
-        ]
+        ],
+        "trade_logs": []
     }
     if os.path.exists(PORTFOLIO_FILE):
         try:
             with open(PORTFOLIO_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict):
+                    if "trade_logs" not in data:
+                        data["trade_logs"] = []
+                    if "realized_pnl" not in data:
+                        data["realized_pnl"] = 0
                     return data
-                elif isinstance(data, list):  # 구버전 호환용
+                elif isinstance(data, list):
                     default_data["items"] = data
                     return default_data
         except Exception:
@@ -86,7 +92,6 @@ def save_current_portfolio(data_to_save):
     except Exception:
         return False
 
-# 세션 초기화 시 파일에서 영구 저장 데이터 로드
 if 'account_data' not in st.session_state:
     st.session_state.account_data = load_saved_portfolio()
 
@@ -305,7 +310,7 @@ def style_table(df_target, df_full):
 
     return df_target.style.apply(lambda row: color_styler(row.name, row), axis=1).format(format_dict, na_rep="-")
 
-# 엑셀 원본(PPP 시트) 수식 계산 함수
+# 엑셀 원본 수식 계산 함수
 def calculate_indicator_sheet(df_raw):
     df = df_raw.copy().reset_index()
     closes = pd.to_numeric(df['Close'], errors='coerce').ffill().values
@@ -878,7 +883,7 @@ if stock_code:
             "📊 매수·매도 표 (전체)", 
             "📢 마감 브리핑", 
             "🎯 1안 실전 가이드 & 계산기", 
-            "💼 보유 포트폴리오", 
+            "💼 보유 포트폴리오 & 거래 일지", 
             "💾 엑셀 다운로드"
         ])
 
@@ -1017,7 +1022,7 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # 4. 다음 목표가까지 남은 거리 (D-Day 카운트다운)
+            # 4. 다음 목표가까지 남은 거리
             curr_p = s['B1']
             tp_3 = target_prices_dict.get(-40, 0)
             tp_4 = target_prices_dict.get(-55, 0)
@@ -1042,7 +1047,7 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # 5. 최근 5영업일 핵심 지표(S값) 궤적 추적
+            # 5. 최근 5영업일 핵심 지표 궤적 추적
             recent_5 = df_full_result.tail(5).copy()
             s_traj_html = " ➔ ".join([f"<b>{row['일자'][5:]}</b> (S: <code>{row['S']}</code>)" for _, row in recent_5.iterrows()])
             s_diff_5 = recent_5['S'].iloc[-1] - recent_5['S'].iloc[0]
@@ -1184,62 +1189,127 @@ if stock_code:
             st.dataframe(pd.DataFrame(calc_def), use_container_width=True)
 
         # -----------------------------
-        # TAB 4: 보유 포트폴리오 (원금·예수금·종목·수량 통합 영구 저장)
+        # TAB 4: 보유 포트폴리오 & 매매 거래 일지 (자동 잔고 정산 탑재)
         # -----------------------------
         with tab4:
-            st.markdown("##### 💼 실전 보유 포트폴리오 & 총 계좌 자산 관리")
-            st.caption("내 투자 원금, 예수금, 종목 수량 및 평단가를 수정한 뒤 아래 [💾 포트폴리오 및 계좌 정보 영구 저장] 버튼을 누르면 새로고침(F5)을 해도 100% 안전하게 유지됩니다.")
+            st.markdown("##### 💼 실전 계좌 잔고 & 매수·매도 거래 일지 (자동 연동)")
+            st.caption("체결된 매수/매도 거래를 아래에 기록하면 예수금과 주식 잔고가 실시간으로 자동 정산되어 영구 보존됩니다.")
 
-            # A. 내 투자 원금 & 현재 예수금 입력 영역
+            acc = st.session_state.account_data
+
+            # 1. 초기 원금 & 예수금 설정
             col_acc1, col_acc2, col_acc3 = st.columns([1.5, 1.5, 1.5])
             with col_acc1:
-                user_principal = st.number_input(
+                new_principal = st.number_input(
                     "💰 내 총 투자 원금 (원)",
                     min_value=0,
-                    value=int(st.session_state.account_data.get("user_principal", 30000000)),
+                    value=int(acc.get("user_principal", 30000000)),
                     step=1000000,
                     format="%d",
                     key="input_user_principal"
                 )
             with col_acc2:
-                user_cash = st.number_input(
+                new_cash = st.number_input(
                     "💵 현재 계좌 예수금(현금) (원)",
                     min_value=0,
-                    value=int(st.session_state.account_data.get("user_cash", 10000000)),
+                    value=int(acc.get("user_cash", 10000000)),
                     step=500000,
                     format="%d",
                     key="input_user_cash"
                 )
             with col_acc3:
                 st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                if st.button("💾 포트폴리오 및 계좌 정보 영구 저장", use_container_width=True):
-                    # 세션 및 JSON 파일에 저장
-                    data_to_save = {
-                        "user_principal": user_principal,
-                        "user_cash": user_cash,
-                        "items": st.session_state.account_data["items"]
-                    }
-                    st.session_state.account_data = data_to_save
-                    if save_current_portfolio(data_to_save):
-                        st.success("✅ 원금, 예수금, 종목 정보가 안전하게 영구 저장되었습니다! (새로고침 시 유지)")
+                if st.button("💾 전체 계좌 데이터 영구 저장", use_container_width=True):
+                    acc["user_principal"] = new_principal
+                    acc["user_cash"] = new_cash
+                    if save_current_portfolio(acc):
+                        st.success("✅ 원금, 예수금, 종목, 거래 일지가 안전하게 영구 저장되었습니다!")
                     else:
                         st.error("저장 중 오류가 발생했습니다.")
 
-            st.markdown("---")
-            if st.button("➕ 보유 종목 추가하기"):
-                new_id = max([item["id"] for item in st.session_state.account_data["items"]], default=0) + 1
-                st.session_state.account_data["items"].append({
-                    "id": new_id, "input_val": "", "confirmed_code": "233740", "confirmed_name": "", "qty": 0, "avg_price": 0
-                })
-                st.rerun()
+            # 2. 신규 매수 / 매도 거래 입력 폼
+            with st.expander("📝 [신규 매수·매도 체결 내역 입력하기]", expanded=False):
+                with st.form("trade_input_form"):
+                    tf_col1, tf_col2, tf_col3, tf_col4, tf_col5 = st.columns([1.2, 1.2, 1.0, 1.0, 1.0])
+                    with tf_col1:
+                        trade_date = st.date_input("체결 일자", datetime.today()).strftime('%Y-%m-%d')
+                    with tf_col2:
+                        trade_stock_input = st.text_input("체결 종목명 또는 코드", value="233740").strip()
+                    with tf_col3:
+                        trade_type = st.selectbox("거래 구분", ["🔴 매수", "🔵 매도"])
+                    with tf_col4:
+                        trade_price = st.number_input("체결 단가(원)", min_value=1, value=5000, step=10)
+                    with tf_col5:
+                        trade_qty = st.number_input("체결 수량(주)", min_value=1, value=100, step=10)
 
+                    submit_trade = st.form_submit_button("➕ 거래 내역 등록 및 계좌 자동 반영", use_container_width=True)
+
+                    if submit_trade:
+                        t_code, t_name = resolve_code_and_name(trade_stock_input)
+                        total_trade_amount = trade_price * trade_qty
+                        
+                        # A. 해당 종목 포트폴리오 찾기
+                        target_item = None
+                        for itm in acc["items"]:
+                            if itm["confirmed_code"] == t_code:
+                                target_item = itm
+                                break
+                        
+                        if target_item is None:
+                            new_id = max([item["id"] for item in acc["items"]], default=0) + 1
+                            target_item = {
+                                "id": new_id, "input_val": t_code, "confirmed_code": t_code, "confirmed_name": t_name, "qty": 0, "avg_price": 0
+                            }
+                            acc["items"].append(target_item)
+
+                        # B. 매수/매도 잔고 정산 계산
+                        realized_gain = 0
+                        if "매수" in trade_type:
+                            # 예수금 차감
+                            acc["user_cash"] -= total_trade_amount
+                            # 가중평균 평단가 갱신
+                            old_qty = target_item["qty"]
+                            old_price = target_item["avg_price"]
+                            new_tot_qty = old_qty + trade_qty
+                            new_avg = int((old_qty * old_price + total_trade_amount) / new_tot_qty) if new_tot_qty > 0 else trade_price
+                            target_item["qty"] = new_tot_qty
+                            target_item["avg_price"] = new_avg
+                        else: # 매도
+                            # 예수금 입금
+                            acc["user_cash"] += total_trade_amount
+                            old_qty = target_item["qty"]
+                            old_price = target_item["avg_price"]
+                            # 실현 손익 계산
+                            realized_gain = (trade_price - old_price) * min(old_qty, trade_qty)
+                            acc["realized_pnl"] += realized_gain
+                            # 잔여 수량 차감
+                            target_item["qty"] = max(0, old_qty - trade_qty)
+
+                        # C. 거래 일지 기록 추가
+                        acc["trade_logs"].append({
+                            "일자": trade_date,
+                            "종목": t_name,
+                            "코드": t_code,
+                            "구분": trade_type,
+                            "체결단가": trade_price,
+                            "체결수량": trade_qty,
+                            "체결금액": total_trade_amount,
+                            "실현손익": realized_gain
+                        })
+
+                        save_current_portfolio(acc)
+                        st.success(f"✅ [{trade_type}] {t_name} {trade_qty:,}주 ({total_trade_amount:,}원) 체결 반영 완료!")
+                        st.rerun()
+
+            st.markdown("---")
+            # 3. 보유 종목 리스트 테이블
+            st.markdown("###### 📊 현재 보유 종목 현황")
             total_invested_stocks = 0
             total_eval_stocks = 0
             items_to_delete = []
             stock_eval_dict = {}
 
-            # 종목별 입력 테이블
-            for idx, item in enumerate(st.session_state.account_data["items"]):
+            for idx, item in enumerate(acc["items"]):
                 cols = st.columns([1.6, 0.9, 0.9, 0.9, 1.1, 0.5])
                 with cols[0]:
                     item["input_val"] = st.text_input(f"종목명/코드 {idx+1}", value=item["input_val"], key=f"mp_input_{item['id']}")
@@ -1249,6 +1319,7 @@ if stock_code:
                         c, n = resolve_code_and_name(item["input_val"])
                         item["confirmed_code"] = c
                         item["confirmed_name"] = n
+                        save_current_portfolio(acc)
                         st.rerun()
                 with cols[2]:
                     item["qty"] = st.number_input(f"수량 {idx+1}", min_value=0, value=item["qty"], key=f"mp_qty_{item['id']}")
@@ -1276,32 +1347,49 @@ if stock_code:
 
             if items_to_delete:
                 for itm in items_to_delete:
-                    st.session_state.account_data["items"].remove(itm)
-                save_current_portfolio({
-                    "user_principal": user_principal,
-                    "user_cash": user_cash,
-                    "items": st.session_state.account_data["items"]
-                })
+                    acc["items"].remove(itm)
+                save_current_portfolio(acc)
                 st.rerun()
 
             st.markdown("---")
-            # B. 계좌 종합 요약 대시보드 (주식 + 예수금 + 원금 대비 순수익)
-            total_account_assets = total_eval_stocks + user_cash  # 총자산 = 주식평가액 + 예수금
-            net_profit_total = total_account_assets - user_principal  # 총자산 - 내 원금
-            net_profit_rate = (net_profit_total / user_principal * 100) if user_principal > 0 else 0.0
+            # 4. 실시간 계좌 대시보드
+            curr_cash = acc.get("user_cash", 0)
+            principal = acc.get("user_principal", 0)
+            realized_pnl = acc.get("realized_pnl", 0)
+
+            total_account_assets = total_eval_stocks + curr_cash
+            net_profit_total = total_account_assets - principal
+            net_profit_rate = (net_profit_total / principal * 100) if principal > 0 else 0.0
 
             fc1, fc2, fc3, fc4 = st.columns(4)
-            fc1.metric("내 총 투자 원금", f"{user_principal:,}원")
-            fc2.metric("보유 주식 총 평가액", f"{total_eval_stocks:,}원", f"{((total_eval_stocks/total_invested_stocks - 1.0)*100 if total_invested_stocks>0 else 0):+.2f}% (매입대비)")
-            fc3.metric("계좌 예수금 (현금)", f"{user_cash:,}원", f"비중 {(user_cash/total_account_assets*100 if total_account_assets>0 else 0):.1f}%")
+            fc1.metric("내 총 투자 원금", f"{principal:,}원")
+            fc2.metric("보유 주식 실시간 평가액", f"{total_eval_stocks:,}원", f"{((total_eval_stocks/total_invested_stocks - 1.0)*100 if total_invested_stocks>0 else 0):+.2f}% (평가손익)")
+            fc3.metric("실시간 잔여 예수금 (현금)", f"{curr_cash:,}원", f"누적 실현수익: {realized_pnl:+,}원")
             fc4.metric("계좌 총자산 (주식+현금)", f"{total_account_assets:,}원", f"{net_profit_rate:+.2f}% ({net_profit_total:+,}원)")
 
-            # ------------------------------------------------------------------
-            # 🛡️ [헤지 & 비중 진단] 레버리지(233740) vs 선물인버스(251340) 스마트 진단
-            # ------------------------------------------------------------------
+            # 5. 매수·매도 체결 일지 표
+            if acc.get("trade_logs"):
+                st.markdown("###### 📜 최근 매수·매도 체결 일지")
+                df_logs = pd.DataFrame(acc["trade_logs"]).iloc[::-1] # 최신순
+                st.dataframe(
+                    df_logs.style.format({
+                        "체결단가": "{:,}원",
+                        "체결수량": "{:,}주",
+                        "체결금액": "{:,}원",
+                        "실현손익": "{:+,}원"
+                    }),
+                    use_container_width=True,
+                    height=200
+                )
+                if st.button("🗑️ 체결 일지 초기화"):
+                    acc["trade_logs"] = []
+                    acc["realized_pnl"] = 0
+                    save_current_portfolio(acc)
+                    st.rerun()
+
+            # 6. 헤지 진단 카드
             st.markdown("---")
             st.markdown("##### 🛡️ 레버리지 vs 선물인버스 스마트 헤지(50% 롱-숏) 진단")
-            
             lev_val = stock_eval_dict.get("233740", 0)
             inv_val = stock_eval_dict.get("251340", 0)
             target_inv_hedge = lev_val * 0.50
