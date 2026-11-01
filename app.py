@@ -1189,10 +1189,10 @@ if stock_code:
             st.dataframe(pd.DataFrame(calc_def), use_container_width=True)
 
         # -----------------------------
-        # TAB 4: 보유 포트폴리오 & 매매 거래 일지
+        # TAB 4: 보유 포트폴리오 & 3중 결합 스마트 리밸런싱
         # -----------------------------
         with tab4:
-            st.markdown("##### 💼 실전 계좌 잔고 & 매매 체결 일지")
+            st.markdown("##### 💼 실전 계좌 잔고 & 3중 결합 스마트 리밸런싱")
             st.caption("내 투자 원금, 예수금, 종목 수량 및 평단가를 자유롭게 입력·수정하고 아래 [💾 전체 계좌 데이터 영구 저장] 버튼을 누르면 새로고침(F5)을 해도 100% 안전하게 유지됩니다.")
 
             acc = st.session_state.account_data
@@ -1303,7 +1303,72 @@ if stock_code:
             fc3.metric("실시간 계좌 예수금(현금)", f"{curr_cash:,}원", f"비중 {(curr_cash/total_account_assets*100 if total_account_assets>0 else 0):.1f}%")
             fc4.metric("계좌 총자산 (주식+현금)", f"{total_account_assets:,}원", f"{net_profit_rate:+.2f}% ({net_profit_total:+,}원)")
 
+            # ------------------------------------------------------------------
+            # ⚖️ [고도화] S값 트리거 + 50% 롱-숏 밴드 룰 + 반기 점검 통합 대시보드
+            # ------------------------------------------------------------------
+            st.markdown("---")
+            st.markdown("##### ⚖️ [S값 시그널 + 50% 롱-숏 헤지 밴드 룰] 통합 리밸런싱 진단기")
+            
+            lev_val = stock_eval_dict.get("233740", 0)
+            inv_val = stock_eval_dict.get("251340", 0)
+            target_inv_hedge = lev_val * 0.50
+            hedge_diff = inv_val - target_inv_hedge
+            actual_hedge_ratio = (inv_val / lev_val * 100) if lev_val > 0 else 0.0
+
+            # 반기(6월 말, 12월 말) 점검 D-Day 계산
+            today_dt = datetime.today()
+            this_year = today_dt.year
+            d_june = datetime(this_year, 6, 30)
+            d_dec = datetime(this_year, 12, 31)
+            
+            if today_dt <= d_june:
+                next_check_dt = d_june
+                next_check_name = "전반기(6월 말)"
+            else:
+                next_check_dt = d_dec
+                next_check_name = "후반기(12월 말)"
+            d_day = (next_check_dt - today_dt).days
+
+            if lev_val > 0:
+                # 1단계: S값 시그널 기반 교대 판정
+                if current_s_val >= 0:
+                    reb_title = "🔵 [S값 고점 회복] 인버스 50% 진입 & 레버리지 분할 익절 타이밍 (S ≥ 0)"
+                    reb_color = "#1976D2"
+                    reb_guidance = f"현재 메인 종목의 S값이 <b>{current_s_val}</b>로 회복되었습니다. 레버리지 평가액의 50% 수준인 <b>약 {int(target_inv_hedge):,}원</b>으로 선물인버스(251340)를 진입하여 하락장 방어 태세를 갖추세요."
+                elif current_s_val <= -40:
+                    reb_title = "🔴 [S값 바닥권 도달] 인버스 전량 익절 & 레버리지 3~4차 집중 전환 (S ≤ -40)"
+                    reb_color = "#D32F2F"
+                    reb_guidance = f"현재 메인 종목이 3~4차 바닥권(S값: <b>{current_s_val}</b>)에 진입했습니다. 하락을 방어해 준 <b>인버스를 전량 매도(수익 확정)</b>하고, 그 자금으로 레버리지 추가 매수에 집중하세요."
+                else:
+                    # 2단계: 밴드 룰 판정 (목표 50% 기준 ±15%p 이탈 여부: 35% ~ 65%)
+                    if actual_hedge_ratio > 65.0:
+                        reb_title = "🟠 [밴드 상방 이탈] 인버스 비중 과다 ➔ 초과분 부분 익절 권장"
+                        reb_color = "#FF8F00"
+                        reb_guidance = f"인버스 비중(<b>{actual_hedge_ratio:.1f}%</b>)이 허용 상한(65%)을 초과했습니다. 초과된 <b>약 {int(hedge_diff):,}원</b> 상당의 인버스를 부분 익절하여 현금을 확보하세요."
+                    elif actual_hedge_ratio < 35.0:
+                        reb_title = "🟠 [밴드 하방 이탈] 인버스 방어력 약화 ➔ 50% 수준 보충 권장"
+                        reb_color = "#FF8F00"
+                        reb_guidance = f"인버스 비중(<b>{actual_hedge_ratio:.1f}%</b>)이 허용 하한(35%)에 미달합니다. 안정적 방어를 위해 인버스를 <b>약 {int(abs(hedge_diff)):,}원</b> 보충하는 것을 권장합니다."
+                    else:
+                        reb_title = "🟢 [정상 균형] 50% 롱-숏 헤지 밴드 범위 안착"
+                        reb_color = "#2E7D32"
+                        reb_guidance = f"인버스 헤지 비율(<b>{actual_hedge_ratio:.1f}%</b>)이 50% 목표 범위(35%~65%) 내에 완벽하게 안착해 있습니다. 포지션을 그대로 유지하세요."
+
+                st.markdown(f"""
+                <div class="brief-card" style="border-left: 6px solid {reb_color}; background-color: #FAFAFA;">
+                    <div class="brief-title" style="color: {reb_color}; font-size: 0.98rem;">{reb_title}</div>
+                    <div style="font-size: 0.88rem; color: #222; line-height: 1.6;">
+                        • <b>포트폴리오 헤지 현황</b>: 레버리지 <b>{lev_val:,}원</b> | 인버스 <b>{inv_val:,}원</b> (헤지 비율: <b>{actual_hedge_ratio:.1f}%</b> / 권장: 50.0%)<br>
+                        • <b>실시간 행동 지침</b>: {reb_guidance}<br>
+                        • <b>📅 차기 정기 점검일</b>: <b>{next_check_name}</b>까지 <b>D-{d_day}일</b> 남음 (파동 신호 없을 시 최종 잔액 균형 점검)
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.info("💡 보유 종목 현황에 [KODEX 코스닥150레버리지(233740)]를 등록하시면 실시간 S값 & 50% 롱-숏 헤지 진단 카드가 즉시 활성화됩니다.")
+
             # 4. 체결 일지 기록 (단독 기록형)
+            st.markdown("---")
             with st.expander("📝 [매수·매도 체결 기록 일지 입력]", expanded=False):
                 with st.form("simple_trade_log_form"):
                     tf1, tf2, tf3, tf4, tf5 = st.columns([1.2, 1.2, 1.0, 1.0, 1.0])
@@ -1348,42 +1413,6 @@ if stock_code:
                         acc["trade_logs"] = []
                         save_current_portfolio(acc)
                         st.rerun()
-
-            # 5. 헤지 진단 카드
-            st.markdown("---")
-            st.markdown("##### 🛡️ 레버리지 vs 선물인버스 스마트 헤지(50% 롱-숏) 진단")
-            lev_val = stock_eval_dict.get("233740", 0)
-            inv_val = stock_eval_dict.get("251340", 0)
-            target_inv_hedge = lev_val * 0.50
-            hedge_diff = inv_val - target_inv_hedge
-            actual_hedge_ratio = (inv_val / lev_val * 100) if lev_val > 0 else 0.0
-
-            if lev_val > 0:
-                if current_s_val >= 0:
-                    hg_badge = "🔵 [지표 회복/고점] 인버스 진입 검토 구간 (S ≥ 0)"
-                    hg_color = "#1976D2"
-                    hg_desc = f"현재 메인 종목의 S값이 회복된 고점 영역입니다. 레버리지 물량을 일부 익절하고, 레버리지 평가액({lev_val:,}원)의 <b>약 50% 수준({int(target_inv_hedge):,}원)</b>으로 인버스에 진입하여 하락장 방어 태세를 갖추는 것이 유리합니다."
-                elif current_s_val <= -40:
-                    hg_badge = "🔴 [바닥권 도달] 인버스 전량 익절 & 레버리지 전환 구간 (S ≤ -40)"
-                    hg_color = "#D32F2F"
-                    hg_desc = f"현재 메인 종목이 3~4차 바닥권(S≤-40)에 도달했습니다. 보유 중인 <b>인버스 물량을 전량 매도(수익 실현)</b>하고, 그 자금으로 레버리지 3~4차 방어선 매수에 집중 투입하세요."
-                else:
-                    hg_badge = "⚖️ [헤지 균형 점검] 인버스 50% 적정 비중 유지 국면"
-                    hg_color = "#2E7D32"
-                    hg_desc = f"현재 인버스 헤지 비율은 레버리지 대비 <b>{actual_hedge_ratio:.1f}%</b> (보유액: {inv_val:,}원 / 권장 50%: {int(target_inv_hedge):,}원)입니다.<br>" \
-                              f"{'인버스 비중이 적정 수준(50% 내외)으로 잘 세팅되어 있습니다.' if abs(actual_hedge_ratio - 50) <= 15 else f'권장 50% 비중에 맞추려면 인버스를 약 {int(abs(hedge_diff)):,}원 상당 추가 조정하세요.'}"
-
-                st.markdown(f"""
-                <div class="brief-card" style="border-left: 6px solid {hg_color}; background-color: #FAFAFA;">
-                    <div class="brief-title" style="color: {hg_color}; font-size: 0.98rem;">{hg_badge}</div>
-                    <div style="font-size: 0.88rem; color: #222; line-height: 1.6;">
-                        • <b>현재 보유 현황</b>: 레버리지 평가액 <b>{lev_val:,}원</b> | 인버스 평가액 <b>{inv_val:,}원</b> (헤지 비율: <b>{actual_hedge_ratio:.1f}%</b>)<br>
-                        • <b>실전 가이드</b>: {hg_desc}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.info("💡 포트폴리오 목록에 [KODEX 코스닥150레버리지(233740)]를 등록하시면 50% 선물인버스 헤지 진단이 활성화됩니다.")
 
         # -----------------------------
         # TAB 5: 엑셀 다운로드 (정렬 일치 & 지표 컬러 완벽 동기화)
