@@ -73,14 +73,24 @@ st.markdown("""
 st.subheader("📈 스마트 파동 매매 시스템 Pro Max")
 
 # ---------------------------------------------------------
-# 2. 포트폴리오 & 계좌 데이터 영구 저장 관리
+# 2. 포트폴리오 & 즐겨찾기 영구 저장 관리 (portfolio_data.json)
 # ---------------------------------------------------------
 PORTFOLIO_FILE = "portfolio_data.json"
 
 def load_saved_portfolio():
+    default_favorites = [
+        "KODEX 코스닥150레버리지 (233740)",
+        "KODEX 코스닥150선물인버스 (251340)",
+        "TIGER 미국나스닥100타겟데일리커버드콜 (486290)",
+        "KODEX 레버리지 (122630)",
+        "KODEX 200선물인버스2X (252670)",
+        "삼성전자 (005930)",
+        "SK하이닉스 (000660)"
+    ]
     default_data = {
         "user_principal": 30000000,
         "user_cash": 10000000,
+        "favorites": default_favorites,
         "items": [
             {"id": 1, "input_val": "233740", "confirmed_code": "233740", "confirmed_name": "KODEX 코스닥150레버리지", "qty": 5717, "avg_price": 5330},
             {"id": 2, "input_val": "251340", "confirmed_code": "251340", "confirmed_name": "KODEX 코스닥150선물인버스", "qty": 0, "avg_price": 0}
@@ -100,6 +110,8 @@ def load_saved_portfolio():
                         data["user_principal"] = 30000000
                     if "user_cash" not in data:
                         data["user_cash"] = 10000000
+                    if "favorites" not in data or not isinstance(data["favorites"], list):
+                        data["favorites"] = default_favorites
                     return data
         except Exception:
             pass
@@ -161,7 +173,7 @@ def get_naver_stock_data(code, count=1500):
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_naver_stock_name(code):
-    """외부 API 없이 네이버 금융 기본 웹페이지 타이틀에서 종목명 자동 추출"""
+    """외부 API 없이 네이버 금융 웹페이지 타이틀에서 종목명 자동 추출"""
     try:
         url = f"https://finance.naver.com/item/main.naver?code={code}"
         res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
@@ -175,7 +187,7 @@ def fetch_naver_stock_name(code):
         pass
     return f"종목({code})"
 
-# 주요 자주 쓰는 종목 빠른 매핑 사전 (대폭 확장)
+# 주요 종목 빠른 매핑 사전
 name_to_code = {
     "코스피지수": "KOSPI",
     "코스닥지수": "KOSDAQ",
@@ -183,6 +195,7 @@ name_to_code = {
     "코스닥150레버리지": "233740",
     "KODEX 코스닥150선물인버스": "251340",
     "코스닥150선물인버스": "251340",
+    "TIGER 미국나스닥100타겟데일리커버드콜": "486290",
     "KODEX 레버리지": "122630",
     "KODEX 200선물인버스2X": "252670",
     "곱버스": "252670",
@@ -210,6 +223,7 @@ code_to_name = {v: k for k, v in name_to_code.items()}
 code_to_name["233740"] = "KODEX 코스닥150레버리지"
 code_to_name["251340"] = "KODEX 코스닥150선물인버스"
 code_to_name["252670"] = "KODEX 200선물인버스2X"
+code_to_name["486290"] = "TIGER 미국나스닥100타겟데일리커버드콜"
 
 def resolve_code_and_name(user_str):
     clean_str = str(user_str).strip()
@@ -233,41 +247,96 @@ def resolve_code_and_name(user_str):
         return clean_str, clean_str
 
 # ---------------------------------------------------------
-# 4. 상단 종목 빠른 선택 및 검색 바
+# 4. 상단 종목 빠른 선택 및 즐겨찾기 자유 관리 바
 # ---------------------------------------------------------
+acc_favs = st.session_state.account_data.get("favorites", [])
+if 'current_target_query' not in st.session_state:
+    st.session_state.current_target_query = "233740"
+
 with st.form(key="search_form"):
-    col_in1, col_in2, col_in3, col_in4 = st.columns([1.8, 1.2, 1.0, 0.8])
+    col_in1, col_in2, col_in3, col_in4 = st.columns([1.6, 1.4, 0.9, 0.7])
     with col_in1:
         user_input = st.text_input(
-            "🔍 종목명 또는 6자리 종목코드 입력",
-            value="233740",
-            placeholder="예: 233740, 코스닥150레버리지, 삼성전자"
+            "🔍 직접 입력 (종목명 또는 6자리 코드)",
+            value=st.session_state.current_target_query,
+            placeholder="예: 233740, 삼성전자, 피엔티"
         ).strip()
     with col_in2:
         quick_pick = st.selectbox(
-            "⚡ 즐겨찾는 종목 바로 선택",
-            options=["직접 입력 사용", "KODEX 코스닥150레버리지 (233740)", "KODEX 코스닥150선물인버스 (251340)", "KODEX 레버리지 (122630)", "KODEX 200선물인버스2X (252670)", "삼성전자 (005930)", "SK하이닉스 (000660)"],
+            "⭐ 내 즐겨찾기 종목 바로 선택",
+            options=["직접 입력 사용"] + acc_favs,
             index=0
         )
     with col_in3:
-        years_back = st.selectbox("📅 표시 기간", options=[1, 2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년 데이터")
+        years_back = st.selectbox("📅 표시 기간", options=[1, 2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
     with col_in4:
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        submit_search = st.form_submit_button("🔍 즉시 조회", use_container_width=True)
+        submit_search = st.form_submit_button("🔍 조회", use_container_width=True)
 
-if quick_pick != "직접 입력 사용":
-    extracted_code = re.search(r'\((\d+)\)', quick_pick)
-    target_query = extracted_code.group(1) if extracted_code else user_input
-else:
-    target_query = user_input
+if submit_search:
+    if quick_pick != "직접 입력 사용":
+        extracted_code = re.search(r'\(([^)]+)\)$', quick_pick)
+        st.session_state.current_target_query = extracted_code.group(1) if extracted_code else user_input
+    else:
+        st.session_state.current_target_query = user_input
 
-stock_code, stock_name = resolve_code_and_name(target_query)
+stock_code, stock_name = resolve_code_and_name(st.session_state.current_target_query)
+current_fav_label = f"{stock_name} ({stock_code})"
 
-# 원본 엑셀 호환용 10원 단위 반올림 및 정밀 호가 반올림 지원
+# 원클릭 별표(☆/★) 버튼 & 오른쪽 목록 관리창(⚙️)
+fav_col1, fav_col2 = st.columns([1.3, 2.7])
+with fav_col1:
+    if current_fav_label in acc_favs:
+        if st.button(f"★ 즐겨찾기 해제 [{stock_name}]", use_container_width=True):
+            acc_favs.remove(current_fav_label)
+            st.session_state.account_data["favorites"] = acc_favs
+            save_current_portfolio(st.session_state.account_data)
+            st.rerun()
+    else:
+        if st.button(f"☆ 현재 종목 즐겨찾기 추가 [{stock_name}]", use_container_width=True):
+            acc_favs.append(current_fav_label)
+            st.session_state.account_data["favorites"] = acc_favs
+            save_current_portfolio(st.session_state.account_data)
+            st.rerun()
+
+with fav_col2:
+    with st.expander("⚙️ 즐겨찾기 목록 직접 추가 / 순서·삭제 관리"):
+        m_col1, m_col2 = st.columns([3, 1])
+        with m_col1:
+            new_fav_str = st.text_input(
+                "새로 등록할 종목명 또는 6자리 코드 입력",
+                placeholder="예: 005380, 현대차, 알테오젠",
+                key="new_fav_input",
+                label_visibility="collapsed"
+            )
+        with m_col2:
+            if st.button("➕ 목록에 추가", use_container_width=True):
+                if new_fav_str.strip():
+                    f_code, f_name = resolve_code_and_name(new_fav_str.strip())
+                    new_entry = f"{f_name} ({f_code})"
+                    if new_entry not in acc_favs:
+                        acc_favs.append(new_entry)
+                        st.session_state.account_data["favorites"] = acc_favs
+                        save_current_portfolio(st.session_state.account_data)
+                        st.success(f"✅ '{new_entry}' 추가 완료!")
+                        st.rerun()
+
+        # 멀티셀렉트 태그 X 버튼으로 삭제 및 순서 편집 지원
+        updated_favs = st.multiselect(
+            "현재 등록된 즐겨찾기 (X를 눌러 삭제 후 아래 저장 클릭)",
+            options=acc_favs,
+            default=acc_favs
+        )
+        if updated_favs != acc_favs:
+            if st.button("💾 변경된 즐겨찾기 목록 저장", use_container_width=True):
+                st.session_state.account_data["favorites"] = updated_favs
+                save_current_portfolio(st.session_state.account_data)
+                st.rerun()
+
+# 원본 엑셀 호환용 10원 단위 반올림 및 저가주 정밀 호가 지원
 def r10(val):
     if val <= 0:
         return 0
-    # 2,000원 미만 저가 ETF/주식은 1원 단위, 그 외에는 엑셀 원본 수식과 동일하게 10원 단위 유지
     if val < 2000:
         return int(round(val))
     return int(np.floor(val / 10.0 + 0.5) * 10)
@@ -1014,7 +1083,6 @@ if stock_code:
                     st.caption("🔹 최근 1년 S값 추이 (-25 이하 분할매수권 / 0 이상 매도권)")
                     st.line_chart(chart_df[['S']], height=220)
 
-            # 신호 필터 옵션 추가 (원하는 타점만 모아보기 지원)
             f_col1, f_col2 = st.columns([2.5, 1.5])
             with f_col1:
                 st.caption("📈 엑셀 원본(PPP 시트)과 100% 일치하는 실시간 파동 테이블입니다.")
@@ -1064,7 +1132,6 @@ if stock_code:
         with tab2:
             st.markdown(f"#### 📢 [{s['date']}] {stock_name} 장 마감 종합 브리핑")
 
-            # 1. 전체 시장 종합 브리핑
             if kosdaq_chg <= -1.5:
                 mkt_stage = "🚨 [지수 급락 / 공포 심리 고조]"
                 mkt_color = "#D32F2F"
@@ -1093,7 +1160,6 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # 2. 당일 캔들 & 거래량 통합 분석 (2단 배치로 한눈에 보기)
             b_col1, b_col2 = st.columns(2)
             with b_col1:
                 o_p, h_p, l_p, c_p = s['Open'], s['High'], s['Low'], s['B1']
@@ -1159,7 +1225,6 @@ if stock_code:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # 4. 목표가 거리 & 5영업일 궤적
             diff_3 = tp3 - curr_p if tp3 > 0 else 0
             diff_3_pct = (diff_3 / curr_p) * 100.0 if curr_p > 0 else 0.0
             diff_4 = tp4 - curr_p if tp4 > 0 else 0
@@ -1179,13 +1244,11 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # 5. 내 계좌 연동 실전 물타기/탈출 시뮬레이터 (원금 연동형으로 업그레이드!)
             if my_port_item:
                 curr_my_qty = my_port_item['qty']
                 curr_my_price = my_port_item['avg_price']
                 curr_eval_pct = ((curr_p / curr_my_price) - 1.0) * 100 if curr_my_price > 0 else 0
                 
-                # 내 설정 원금의 10%(방어 1차) 및 25%(본격 3차) 투입 시 평단가 변화 비교
                 budget_10pct = int(acc_principal * 0.10)
                 budget_25pct = int(acc_principal * 0.25)
                 
@@ -1210,7 +1273,6 @@ if stock_code:
             else:
                 st.info(f"💡 [💼 포트폴리오 & 자동 일지] 탭에 **{stock_name}** 보유 수량과 평단가를 등록해 두시면, 내 원금 기준 정확한 물타기 평단가 인하 시뮬레이션이 자동 계산됩니다.")
 
-            # 네이버 증권 바로가기 버튼
             col_link1, col_link2 = st.columns(2)
             with col_link1:
                 st.link_button(f"📋 {stock_name} 실시간 공시·뉴스 (네이버 증권)", f"https://stock.naver.com/domestic/stock/{stock_code}/news", use_container_width=True)
@@ -1218,7 +1280,7 @@ if stock_code:
                 st.link_button(f"👥 {stock_name} 기관·외국인 수급 동향", f"https://stock.naver.com/domestic/stock/{stock_code}/trend", use_container_width=True)
 
         # -----------------------------
-        # TAB 3: 1안 자동 주문 계산기 (주문 목표가 & 주문 주수 자동 산출)
+        # TAB 3: 1안 자동 주문 계산기
         # -----------------------------
         with tab3:
             st.markdown("##### 🎯 [1안. 정석 분할 방어형] 지정가 목표가 & 주문 수량 자동 계산기")
@@ -1284,7 +1346,6 @@ if stock_code:
             st.markdown("##### 💼 실전 계좌 잔고 & 3중 결합 스마트 리밸런싱")
             acc = st.session_state.account_data
 
-            # 1. 초기 원금 & 예수금 설정
             col_acc1, col_acc2, col_acc3 = st.columns([1.5, 1.5, 1.2])
             with col_acc1:
                 new_principal = st.number_input(
@@ -1311,7 +1372,6 @@ if stock_code:
                         st.success("✅ 원금, 예수금, 종목 수량/평단가가 영구 저장되었습니다!")
 
             st.markdown("---")
-            # 2. 보유 종목 리스트 테이블
             col_h1, col_h2 = st.columns([3, 1])
             with col_h1:
                 st.markdown("###### 📊 현재 보유 종목 현황 (수량·평단가 수정 후 상단 저장 버튼 클릭)")
@@ -1354,7 +1414,6 @@ if stock_code:
                 item_profit = eval_item - invest_item
                 item_rate = ((live_curr_price / item["avg_price"]) - 1.0) * 100 if item["avg_price"] > 0 else 0.0
 
-                # 동일 종목 중복 등록 시에도 누락 없이 합산되도록 개선
                 c_code = item["confirmed_code"]
                 stock_eval_dict[c_code] = stock_eval_dict.get(c_code, 0) + eval_item
 
@@ -1378,7 +1437,6 @@ if stock_code:
                 st.rerun()
 
             st.markdown("---")
-            # 3. 실시간 계좌 종합 대시보드
             curr_cash = new_cash
             principal = new_principal
 
@@ -1394,7 +1452,6 @@ if stock_code:
             fc3.metric("실시간 계좌 예수금(현금)", f"{curr_cash:,}원", f"현금 비중 {(curr_cash/total_account_assets*100 if total_account_assets>0 else 0):.1f}%")
             fc4.metric("계좌 총자산 (주식+현금)", f"{total_account_assets:,}원", f"원금대비 {net_profit_rate:+.2f}% ({net_profit_total:+,}원)")
 
-            # 4. S값 시그널 + 50% 롱-숏 헤지 밴드 통합 진단기
             st.markdown("---")
             st.markdown("##### ⚖️ [S값 시그널 + 50% 롱-숏 헤지 밴드] 통합 리밸런싱 진단기")
             
@@ -1456,7 +1513,6 @@ if stock_code:
             else:
                 st.info("💡 보유 종목에 [KODEX 코스닥150레버리지(233740)] 수량이 입력되면 50% 롱-숏 헤지 진단기가 즉시 작동합니다.")
 
-            # 5. 체결 일지 기록 (보유 포트폴리오 자동 반영 스위치 탑재!)
             st.markdown("---")
             with st.expander("📝 [매수·매도 체결 일지 기록 & 잔고 자동 반영]", expanded=True):
                 with st.form("smart_trade_log_form"):
@@ -1550,14 +1606,14 @@ if stock_code:
             )
 
             st.markdown("---")
-            st.markdown("##### 🔄 내 포트폴리오 & 체결 일지 백업 / 복원 (모바일·PC 연동용)")
-            st.caption("스마트폰이나 다른 PC에서 접속할 때, 내 계좌 설정과 체결 일지를 파일 하나로 간편하게 내려받고 복원할 수 있습니다.")
+            st.markdown("##### 🔄 내 포트폴리오 & 즐겨찾기 백업 / 복원 (모바일·PC 연동용)")
+            st.caption("스마트폰이나 다른 PC에서 접속할 때, 내 계좌 설정·즐겨찾기·체결 일지를 파일 하나로 간편하게 내려받고 복원할 수 있습니다.")
             
             bk_col1, bk_col2 = st.columns(2)
             with bk_col1:
                 json_str = json.dumps(st.session_state.account_data, ensure_ascii=False, indent=2)
                 st.download_button(
-                    label="📤 내 계좌 데이터 백업 파일 내려받기 (.json)",
+                    label="📤 내 계좌·즐겨찾기 통합 백업 내려받기 (.json)",
                     data=json_str.encode('utf-8'),
                     file_name=f"portfolio_backup_{datetime.today().strftime('%Y%m%d')}.json",
                     mime="application/json",
@@ -1571,7 +1627,7 @@ if stock_code:
                         if isinstance(restored_data, dict) and "items" in restored_data:
                             st.session_state.account_data = restored_data
                             save_current_portfolio(restored_data)
-                            st.success("✅ 계좌 데이터 복원이 완료되었습니다! 페이지를 새로고침합니다.")
+                            st.success("✅ 계좌 및 즐겨찾기 복원이 완료되었습니다! 페이지를 새로고침합니다.")
                             st.rerun()
                     except Exception:
                         st.error("올바른 백업 JSON 파일이 아닙니다.")
