@@ -156,7 +156,7 @@ def r10(val):
 def trunc_int(val):
     return int(np.trunc(val))
 
-# 표 스타일러 함수
+# 표 스타일러 함수 (등락률 부호 직결 판별로 색상 정상화)
 def style_table(df_target, df_full):
     cols_grad = ['MM', 'PM', 'LM', 'RM', 'S']
     col_bounds = {}
@@ -768,27 +768,29 @@ if stock_code:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # 7. 🔗 [원클릭 바로가기] 수급 동향 & 공시/뉴스 공식 페이지 연결
+            # 7. 🔗 [신형 네이버 증권 링크] 공시·뉴스 및 수급 원클릭 바로가기
             st.markdown(f"""
             <div class="brief-card" style="border-left: 5px solid #00897B;">
-                <div class="brief-title" style="color: #00897B;">7. 🔗 {stock_name} 수급 & 공시 원클릭 바로가기</div>
+                <div class="brief-title" style="color: #00897B;">7. 🔗 {stock_name} 상세 정보 원클릭 바로가기</div>
                 <div style="font-size:0.86rem; color:#444; margin-bottom: 8px;">
-                    포털 오류 없이 공식 데이터(네이버 증권 / 전자공시)를 원클릭으로 안전하게 확인하실 수 있습니다.
+                    네이버페이 증권 공식 화면으로 즉시 연결되어 최신 공시, 뉴스 및 투자자별 매매동향을 정확히 확인할 수 있습니다.
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
             col_link1, col_link2 = st.columns(2)
             with col_link1:
+                # 📌 지정해주신 신형 뉴스/공시 페이지 URL 연동
                 st.link_button(
-                    f"👥 {stock_name} 매매동향(수급) 보러가기", 
-                    f"https://finance.naver.com/item/frgn.naver?code={stock_code}",
+                    f"📋 {stock_name} 공시·뉴스 보러가기", 
+                    f"https://stock.naver.com/domestic/stock/{stock_code}/news",
                     use_container_width=True
                 )
             with col_link2:
+                # 📌 신형 투자자별 매매동향 페이지 URL 연동
                 st.link_button(
-                    f"📋 {stock_name} 전자공시·뉴스 보러가기", 
-                    f"https://finance.naver.com/item/news_notice.naver?code={stock_code}",
+                    f"👥 {stock_name} 매매동향(수급) 보러가기", 
+                    f"https://stock.naver.com/domestic/stock/{stock_code}/trend",
                     use_container_width=True
                 )
 
@@ -930,4 +932,3 @@ if stock_code:
             )
     else:
         st.error("입력하신 종목의 데이터를 찾을 수 없습니다. 올바른 종목명 또는 6자리 종목코드를 입력해 주세요.")
-        
