@@ -461,7 +461,6 @@ def calculate_indicator_sheet(df_raw):
     }
     return df_out, summary
 
-# 엑셀 색상 유틸리티 함수
 def rgb_to_hex(r, g, b):
     return f"{max(0, min(255, int(r))):02X}{max(0, min(255, int(g))):02X}{max(0, min(255, int(b))):02X}"
 
@@ -497,7 +496,6 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full
         bottom=Side(style='thin', color='E0E0E0')
     )
 
-    # 지표 최소/최대 바운드 산출 (컬러 그라데이션용)
     col_bounds = {}
     for c in ['MM', 'PM', 'LM', 'RM', 'S']:
         vals = pd.to_numeric(df_full_result[c], errors='coerce')
@@ -584,7 +582,6 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full
         ws[c].font = font_bold
         ws[c].alignment = align_center
 
-    # 11행 테이블 헤더 라인
     headers_11 = {
         'A11': "일자", 'B11': "종가(B)", 'C11': "등락률(C)", 'D11': "매수신호",
         'F11': "거래량(F)", 'G11': "거래비율(G)",
@@ -599,31 +596,26 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full
         ws[pos].fill = fill_header
         ws[pos].border = thin_border
 
-    # 정렬 방식 결정 (화면 표와 일치시키기 위해 기본 최신순 역정렬)
     df_to_export = df_display.iloc[::-1].copy() if reverse_order else df_display.copy()
 
     # 12행부터 일별 시세 데이터 테이블 작성
     row_idx = 12
     for _, r in df_to_export.iterrows():
-        # 1. 일자
         c_a = ws.cell(row=row_idx, column=1, value=r['일자'])
         c_a.alignment = align_center
         c_a.font = font_normal
         c_a.border = thin_border
 
-        # 2. 등락 여부 판별
         chg_str = str(r['등락률(C)']).strip()
         is_up = '+' in chg_str
         is_down = '-' in chg_str
 
-        # 3. 종가(B)
         c_b = ws.cell(row=row_idx, column=2, value=int(r['종가(B)']))
         c_b.number_format = '#,##0'
         c_b.alignment = align_right
         c_b.font = font_red_bold if is_up else (font_blue_bold if is_down else font_normal)
         c_b.border = thin_border
 
-        # 4. 등락률(C)
         try:
             chg_val = float(chg_str.replace('%', '').replace('+', '')) / 100.0
             c_c = ws.cell(row=row_idx, column=3, value=chg_val)
@@ -634,7 +626,6 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full
         c_c.font = font_red_bold if is_up else (font_blue_bold if is_down else font_normal)
         c_c.border = thin_border
 
-        # 5. 매수신호(D)
         sig_val = str(r['매수신호']).strip()
         c_d = ws.cell(row=row_idx, column=4, value=sig_val)
         c_d.alignment = align_center
@@ -658,7 +649,6 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full
         else:
             c_d.font = font_normal
 
-        # 6. 거래량(F) & 거래비율(G)
         c_f = ws.cell(row=row_idx, column=6, value=int(r['거래량(F)']))
         c_f.number_format = '#,##0'
         c_f.alignment = align_right
@@ -689,14 +679,12 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full
                 c_f.font = font_blue_bold
                 c_g.font = font_blue_bold
 
-        # 7. MM, PM, LM, S, RM (H ~ L) 컬러링 동기화
         for col_i, col_name in enumerate(['MM', 'PM', 'LM', 'S', 'RM'], start=8):
             val_num = float(r[col_name])
             cell_obj = ws.cell(row=row_idx, column=col_i, value=int(val_num))
             cell_obj.alignment = align_center
             cell_obj.border = thin_border
 
-            # S값 스타일러 (웹 화면과 동일)
             if col_name == 'S':
                 if val_num > 0:
                     ratio_s = min(1.0, val_num / 50.0)
@@ -711,8 +699,6 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full
                 else:
                     cell_obj.fill = fill_header
                     cell_obj.font = font_bold
-            
-            # MM, PM, LM, RM 스타일러 (웹 화면과 동일)
             else:
                 vmin, vmax = col_bounds.get(col_name, (0, 1))
                 ratio_m = 0.0 if vmax == vmin else max(0.0, min(1.0, (val_num - vmin) / (vmax - vmin)))
@@ -727,7 +713,6 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full
                     cell_obj.fill = PatternFill(start_color=m_hex, end_color=m_hex, fill_type="solid")
                     cell_obj.font = font_red_bold if ratio_m > 0.4 else font_normal
 
-        # 8. 파동 변곡값 (M~O, Q~S)
         for col_i, col_name in enumerate(['부-반등(M)', '반등(N)', '상-추세(O)'], start=13):
             val = r.get(col_name)
             cell_obj = ws.cell(row=row_idx, column=col_i)
@@ -1159,7 +1144,7 @@ if stock_code:
             st.dataframe(pd.DataFrame(calc_def), use_container_width=True)
 
         # -----------------------------
-        # TAB 4: 보유 포트폴리오
+        # TAB 4: 보유 포트폴리오 (실시간 리밸런싱 경보 카드 탑재)
         # -----------------------------
         with tab4:
             st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기")
@@ -1219,6 +1204,64 @@ if stock_code:
             fc1.metric("전체 총 투자원금", f"{total_invested_all:,}원")
             fc2.metric("전체 총 평가금액", f"{total_eval_all:,}원", f"{total_pl_rate:+.2f}%")
             fc3.metric("전체 총 평가 손익", f"{total_pl:,}원")
+
+            # ------------------------------------------------------------------
+            # 🔔 [신규] 반기 점검 + 밴드 룰(±10%p) 실시간 리밸런싱 경보 카드
+            # ------------------------------------------------------------------
+            st.markdown("---")
+            st.markdown("##### ⚖️ 계좌 자산배분 & 실시간 리밸런싱 경보 (1안: 70:30 + 밴드 룰)")
+            
+            c_cash1, c_cash2 = st.columns([1.5, 2.5])
+            with c_cash1:
+                my_cash_reserve = st.number_input(
+                    "💵 현재 계좌 내 예비 현금(예수금)",
+                    min_value=0,
+                    value=int(total_invested_all * 0.3) if total_invested_all > 0 else 10000000,
+                    step=500000,
+                    format="%d"
+                )
+            
+            total_portfolio_wealth = total_eval_all + my_cash_reserve
+            stock_ratio = (total_eval_all / total_portfolio_wealth * 100) if total_portfolio_wealth > 0 else 0.0
+            cash_ratio = (my_cash_reserve / total_portfolio_wealth * 100) if total_portfolio_wealth > 0 else 0.0
+
+            with c_cash2:
+                st.markdown(f"""
+                <div style="background-color:#F8F9FA; border-radius:6px; padding:10px 14px; margin-top:24px; font-size:0.88rem; color:#222;">
+                    총 자산: <b>{total_portfolio_wealth:,}원</b> | 
+                    주식 비중: <b style="color:{'#D32F2F' if stock_ratio > 80 else ('#1976D2' if stock_ratio < 60 else '#2E7D32')};">{stock_ratio:.1f}%</b> | 
+                    현금 비중: <b>{cash_ratio:.1f}%</b> (목표 기준 <b>70 : 30</b>)
+                </div>
+                """, unsafe_allow_html=True)
+
+            # 밴드 룰 판정 (허용 오차 ±10%p: 60% ~ 80%)
+            target_stock_val = total_portfolio_wealth * 0.70
+            rebalance_diff = total_eval_all - target_stock_val
+
+            if stock_ratio >= 80.0:
+                reb_badge = "🔵 [상방 밴드 이탈] 익절 리밸런싱 권장 경보"
+                reb_color = "#1976D2"
+                reb_desc = f"주가 상승으로 주식 비중이 <b>{stock_ratio:.1f}%</b>까지 불어났습니다 (허용 밴드 상한 80% 초과).<br>" \
+                           f"<b>💡 실전 행동 지침</b>: 반기 점검일 이전이라도, 주식 평가액 중 약 <b>{int(rebalance_diff):,}원</b> 상당을 분할 매도(익절)하여 예비 현금 비중 30%를 다시 채워두세요."
+            elif stock_ratio <= 60.0 and total_portfolio_wealth > 0:
+                reb_badge = "🔴 [하방 밴드 이탈] 방어선 매수 리밸런싱 권장 경보"
+                reb_color = "#D32F2F"
+                reb_desc = f"주가 하락 또는 현금 과다로 주식 비중이 <b>{stock_ratio:.1f}%</b>로 축소되었습니다 (허용 밴드 하한 60% 미달).<br>" \
+                           f"<b>💡 실전 행동 지침</b>: 손절하지 마시고, 보유 중인 예비 현금 중 약 <b>{int(abs(rebalance_diff)):,}원</b>을 1안 방어선(2차 방어선 S≤-40, 최후 방어선 S≤-55) 가격에 지정가 매수하여 평단가를 낮추고 원래 비중(70%)으로 복원하세요."
+            else:
+                reb_badge = "🟢 [정상 유지] 포트폴리오 비중 균형 유지 중"
+                reb_color = "#2E7D32"
+                reb_desc = f"현재 주식 비중 <b>{stock_ratio:.1f}%</b>는 밴드 룰 허용 범위(60% ~ 80%) 내에 안정적으로 위치해 있습니다.<br>" \
+                           f"<b>💡 실전 행동 지침</b>: 조기 매매 없이 다음 정기 반기 점검일(6월 말 / 12월 말)까지 현재 포지션을 그대로 유지하세요."
+
+            st.markdown(f"""
+            <div class="brief-card" style="border-left: 6px solid {reb_color}; background-color: #FAFAFA; margin-top: 10px;">
+                <div class="brief-title" style="color: {reb_color}; font-size: 1.0rem;">{reb_badge}</div>
+                <div style="font-size: 0.88rem; color: #222; line-height: 1.6;">
+                    {reb_desc}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         # -----------------------------
         # TAB 5: 엑셀 다운로드 (정렬 일치 & 지표 컬러 완벽 동기화)
