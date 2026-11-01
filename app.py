@@ -158,7 +158,7 @@ def r10(val):
 def trunc_int(val):
     return int(np.trunc(val))
 
-# 표 스타일러 함수
+# 웹 표 스타일러 함수
 def style_table(df_target, df_full):
     cols_grad = ['MM', 'PM', 'LM', 'RM', 'S']
     col_bounds = {}
@@ -461,31 +461,44 @@ def calculate_indicator_sheet(df_raw):
     }
     return df_out, summary
 
-# 원본 엑셀 PPP 시트 형식으로 온전한 통합 엑셀 워크북 생성 함수
+# 원본 엑셀 PPP 시트 + 매수신호 통합 + 프리미엄 컬러 스타일링 엑셀 생성 함수
 def generate_original_style_excel(stock_name, stock_code, s, df_display):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "PPP"
 
-    # 기본 서식 스타일 정의
+    # 글꼴 정의
     font_bold = Font(name="맑은 고딕", size=10, bold=True)
     font_normal = Font(name="맑은 고딕", size=9)
     font_title = Font(name="맑은 고딕", size=11, bold=True)
+    font_red = Font(name="맑은 고딕", size=9, color="D32F2F", bold=True)
+    font_blue = Font(name="맑은 고딕", size=9, color="1976D2", bold=True)
+    font_white_bold = Font(name="맑은 고딕", size=9, color="FFFFFF", bold=True)
     
+    # 배경색(Fill) 정의
     fill_header = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
     fill_yellow = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-    fill_blue = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    fill_blue_head = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    fill_soft_red = PatternFill(start_color="FDE8E8", end_color="FDE8E8", fill_type="solid")
+    fill_soft_blue = PatternFill(start_color="E8F0FE", end_color="E8F0FE", fill_type="solid")
+
+    # 매수신호 전용 배경색
+    fill_sig_purple = PatternFill(start_color="7B1FA2", end_color="7B1FA2", fill_type="solid") # 4차 강력
+    fill_sig_red = PatternFill(start_color="D32F2F", end_color="D32F2F", fill_type="solid")    # 2~3차 진입
+    fill_sig_orange = PatternFill(start_color="FF8F00", end_color="FF8F00", fill_type="solid") # 1차 신호
+    fill_sig_blue = PatternFill(start_color="1976D2", end_color="1976D2", fill_type="solid")   # 매도 추천
+    fill_sig_green = PatternFill(start_color="E8F5E9", end_color="E8F5E9", fill_type="solid")  # 관망
 
     align_center = Alignment(horizontal="center", vertical="center")
     align_right = Alignment(horizontal="right", vertical="center")
     thin_border = Border(
-        left=Side(style='thin', color='D9D9D9'),
-        right=Side(style='thin', color='D9D9D9'),
-        top=Side(style='thin', color='D9D9D9'),
-        bottom=Side(style='thin', color='D9D9D9')
+        left=Side(style='thin', color='E0E0E0'),
+        right=Side(style='thin', color='E0E0E0'),
+        top=Side(style='thin', color='E0E0E0'),
+        bottom=Side(style='thin', color='E0E0E0')
     )
 
-    # 1행~11행 상단 요약 대시보드 블록 구축
+    # 1행~11행 상단 요약 대시보드
     ws['A2'] = "기간설정"
     ws['B2'] = "▼ 재무제표 ▼"
     ws['A3'] = "2년 고정"
@@ -515,6 +528,11 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display):
     for cell_id in ['A7', 'A8', 'A9']:
         ws[cell_id].font = font_bold
         ws[cell_id].fill = fill_header
+        ws[cell_id].alignment = align_center
+    for cell_id in ['B7', 'B8', 'B9']:
+        ws[cell_id].font = font_bold
+        ws[cell_id].number_format = '#,##0'
+        ws[cell_id].alignment = align_right
 
     # 파동 열 헤더 (M ~ S)
     headers_wave = {
@@ -531,8 +549,12 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display):
     ws['O8'] = s.get('max_mn', 0)
     ws['Q8'] = s.get('min_pq', 0)
     ws['R8'] = s.get('min_pq', 0)
+    for pos in ['N8', 'O8', 'Q8', 'R8']:
+        ws[pos].font = font_bold
+        ws[pos].number_format = '#,##0'
+        ws[pos].alignment = align_right
 
-    # 현재 3M 대시보드 (Row 7~9, Col F~L)
+    # 현재 3M 대시보드
     ws['F7'] = "현재 3M"
     ws['F7'].font = font_bold
     ws['F8'] = "현재가격"
@@ -545,6 +567,7 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display):
 
     ws['F9'] = s.get('B1', 0)
     ws['F9'].font = font_title
+    ws['F9'].number_format = '#,##0'
     ws['H9'] = s.get('MM', 0)
     ws['I9'] = s.get('PM', 0)
     ws['J9'] = s.get('LM', 0)
@@ -553,60 +576,162 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display):
 
     for c in ['F8', 'G8', 'H8', 'I8', 'J8', 'K8', 'L8']:
         ws[c].font = font_bold
-        ws[c].fill = fill_blue
+        ws[c].fill = fill_blue_head
         ws[c].alignment = align_center
     for c in ['H9', 'I9', 'J9', 'K9', 'L9']:
         ws[c].font = font_bold
         ws[c].alignment = align_center
 
-    # 12행부터 일별 시세 데이터 테이블 구축
-    data_headers = [
-        "일자", "종가(B)", "등락률(C)", "", "", "거래량(F)", "거래비율(G)",
-        "MM", "PM", "LM", "S", "RM",
-        "부-반등(M)", "반등(N)", "상-추세(O)", "", "하-추세(Q)", "조정(R)", "부-조정(S)"
-    ]
+    # 11행 테이블 헤더 라인 추가
+    headers_11 = {
+        'A11': "일자", 'B11': "종가(B)", 'C11': "등락률(C)", 'D11': "매수신호",
+        'F11': "거래량(F)", 'G11': "거래비율(G)",
+        'H11': "MM", 'I11': "PM", 'J11': "LM", 'K11': "S", 'L11': "RM",
+        'M11': "부-반등(M)", 'N11': "반등(N)", 'O11': "상-추세(O)",
+        'Q11': "하-추세(Q)", 'R11': "조정(R)", 'S11': "부-조정(S)"
+    }
+    for pos, h_title in headers_11.items():
+        ws[pos] = h_title
+        ws[pos].font = font_bold
+        ws[pos].alignment = align_center
+        ws[pos].fill = fill_header
+        ws[pos].border = thin_border
 
-    # 원본 순서(과거순)로 12행부터 작성
+    # 12행부터 일별 시세 데이터 테이블 작성 (컬러 서식 적용)
     row_idx = 12
     for _, r in df_display.iterrows():
-        ws.cell(row=row_idx, column=1, value=r['일자']).alignment = align_center
-        ws.cell(row=row_idx, column=2, value=int(r['종가(B)'])).number_format = '#,##0'
-        
+        # 1. 일자
+        c_a = ws.cell(row=row_idx, column=1, value=r['일자'])
+        c_a.alignment = align_center
+        c_a.font = font_normal
+        c_a.border = thin_border
+
+        # 2. 등락 여부 판별
+        chg_str = str(r['등락률(C)']).strip()
+        is_up = '+' in chg_str
+        is_down = '-' in chg_str
+
+        # 3. 종가(B)
+        c_b = ws.cell(row=row_idx, column=2, value=int(r['종가(B)']))
+        c_b.number_format = '#,##0'
+        c_b.alignment = align_right
+        c_b.font = font_red if is_up else (font_blue if is_down else font_normal)
+        c_b.border = thin_border
+
+        # 4. 등락률(C)
         try:
-            chg_val = float(str(r['등락률(C)']).replace('%', '').replace('+', '')) / 100.0
-            ws.cell(row=row_idx, column=3, value=chg_val).number_format = '+0.00%;-0.00%;0.00%'
+            chg_val = float(chg_str.replace('%', '').replace('+', '')) / 100.0
+            c_c = ws.cell(row=row_idx, column=3, value=chg_val)
+            c_c.number_format = '+0.00%;-0.00%;0.00%'
         except Exception:
-            ws.cell(row=row_idx, column=3, value=r['등락률(C)'])
+            c_c = ws.cell(row=row_idx, column=3, value=chg_str)
+        c_c.alignment = align_right
+        c_c.font = font_red if is_up else (font_blue if is_down else font_normal)
+        c_c.border = thin_border
 
-        ws.cell(row=row_idx, column=6, value=int(r['거래량(F)'])).number_format = '#,##0'
-        ws.cell(row=row_idx, column=7, value=float(r['거래비율(G)'])).number_format = '0.00'
+        # 5. 매수신호(D) - 신규 통합 & 컬러링
+        sig_val = str(r['매수신호']).strip()
+        c_d = ws.cell(row=row_idx, column=4, value=sig_val)
+        c_d.alignment = align_center
+        c_d.border = thin_border
 
-        ws.cell(row=row_idx, column=8, value=r['MM']).alignment = align_center
-        ws.cell(row=row_idx, column=9, value=r['PM']).alignment = align_center
-        ws.cell(row=row_idx, column=10, value=r['LM']).alignment = align_center
-        ws.cell(row=row_idx, column=11, value=r['S']).alignment = align_center
-        ws.cell(row=row_idx, column=12, value=r['RM']).alignment = align_center
+        if "강력진입구간" in sig_val:
+            c_d.fill = fill_sig_purple
+            c_d.font = font_white_bold
+        elif "진입구간" in sig_val:
+            c_d.fill = fill_sig_red
+            c_d.font = font_white_bold
+        elif "신호" in sig_val:
+            c_d.fill = fill_sig_orange
+            c_d.font = font_white_bold
+        elif sig_val == "매도 추천":
+            c_d.fill = fill_sig_blue
+            c_d.font = font_white_bold
+        elif sig_val == "관망":
+            c_d.fill = fill_sig_green
+            c_d.font = Font(name="맑은 고딕", size=9, color="2E7D32", bold=True)
+        else:
+            c_d.font = font_normal
 
+        # 6. 거래량(F) & 거래비율(G)
+        c_f = ws.cell(row=row_idx, column=6, value=int(r['거래량(F)']))
+        c_f.number_format = '#,##0'
+        c_f.alignment = align_right
+        c_f.font = font_normal
+        c_f.border = thin_border
+
+        vol_ratio = float(r['거래비율(G)'])
+        c_g = ws.cell(row=row_idx, column=7, value=vol_ratio)
+        c_g.number_format = '0.00'
+        c_g.alignment = align_right
+        c_g.font = font_normal
+        c_g.border = thin_border
+
+        # 거래량 증가/감소 배경색 하이라이트
+        if vol_ratio >= 1.3:
+            c_f.fill = fill_soft_red
+            c_g.fill = fill_soft_red
+            c_f.font = font_red
+        elif vol_ratio <= 0.7:
+            c_f.fill = fill_soft_blue
+            c_g.fill = fill_soft_blue
+
+        # 7. MM, PM, LM, S, RM (H ~ L)
+        c_h = ws.cell(row=row_idx, column=8, value=r['MM'])
+        c_i = ws.cell(row=row_idx, column=9, value=r['PM'])
+        c_j = ws.cell(row=row_idx, column=10, value=r['LM'])
+        c_k = ws.cell(row=row_idx, column=11, value=r['S'])
+        c_l = ws.cell(row=row_idx, column=12, value=r['RM'])
+
+        for cell_obj in [c_h, c_i, c_j, c_k, c_l]:
+            cell_obj.alignment = align_center
+            cell_obj.font = font_normal
+            cell_obj.border = thin_border
+
+        # S값 강조 색상
+        s_val_num = int(r['S'])
+        if s_val_num <= -55:
+            c_k.fill = fill_sig_purple
+            c_k.font = font_white_bold
+        elif s_val_num <= -40:
+            c_k.fill = fill_sig_red
+            c_k.font = font_white_bold
+        elif s_val_num <= -25:
+            c_k.fill = fill_sig_orange
+            c_k.font = font_white_bold
+        elif s_val_num >= 0:
+            c_k.fill = fill_soft_red
+            c_k.font = font_red
+
+        # 8. 파동 변곡값 (M~O, Q~S)
         for col_i, col_name in enumerate(['부-반등(M)', '반등(N)', '상-추세(O)'], start=13):
             val = r.get(col_name)
+            cell_obj = ws.cell(row=row_idx, column=col_i)
+            cell_obj.border = thin_border
             if pd.notna(val) and str(val).strip() not in ['', '-']:
-                c_cell = ws.cell(row=row_idx, column=col_i, value=int(round(float(val))))
-                c_cell.number_format = '#,##0'
-                c_cell.alignment = align_right
+                cell_obj.value = int(round(float(val)))
+                cell_obj.number_format = '#,##0'
+                cell_obj.alignment = align_right
+                cell_obj.font = font_bold
+                cell_obj.fill = fill_yellow
 
         for col_i, col_name in enumerate(['하-추세(Q)', '조정(R)', '부-조정(S)'], start=17):
             val = r.get(col_name)
+            cell_obj = ws.cell(row=row_idx, column=col_i)
+            cell_obj.border = thin_border
             if pd.notna(val) and str(val).strip() not in ['', '-']:
-                c_cell = ws.cell(row=row_idx, column=col_i, value=int(round(float(val))))
-                c_cell.number_format = '#,##0'
-                c_cell.alignment = align_right
+                cell_obj.value = int(round(float(val)))
+                cell_obj.number_format = '#,##0'
+                cell_obj.alignment = align_right
+                cell_obj.font = font_bold
+                cell_obj.fill = fill_yellow
 
         row_idx += 1
 
-    # 열 너비 정리
+    # 최적 열 너비 설정
     widths = {
-        'A': 12, 'B': 10, 'C': 10, 'D': 3, 'E': 3, 'F': 14, 'G': 9,
-        'H': 7, 'I': 7, 'J': 7, 'K': 7, 'L': 7,
+        'A': 12, 'B': 10, 'C': 10, 'D': 16, 'E': 3, 'F': 14, 'G': 9,
+        'H': 7, 'I': 7, 'J': 7, 'K': 8, 'L': 7,
         'M': 10, 'N': 10, 'O': 10, 'P': 3, 'Q': 10, 'R': 10, 'S': 10
     }
     for col_letter, width in widths.items():
@@ -1073,15 +1198,15 @@ if stock_code:
             fc3.metric("전체 총 평가 손익", f"{total_pl:,}원")
 
         # -----------------------------
-        # TAB 5: 엑셀 다운로드 (원본 PPP 시트 양식 100% 재현)
+        # TAB 5: 엑셀 다운로드 (원본 양식 + 매수신호 통합 & 컬러 스타일링)
         # -----------------------------
         with tab5:
-            st.markdown("##### 💾 엑셀 원본 양식 다운로드 (`PPP` 시트)")
-            st.caption("공유해주신 엑셀 원본 파일과 동일하게 상단 요약 대시보드(1~11행)와 하단 일별 파동 시세(12행~)가 온전히 포함된 공식 양식입니다.")
+            st.markdown("##### 💾 원본 통합 엑셀 다운로드 (`PPP` 시트)")
+            st.caption("공유해주신 엑셀 원본 양식(상단 대시보드 및 파동선)에 매수신호 열을 합치고, 등락률·신호·S값 색상 서식을 입힌 파일입니다.")
             
             excel_bytes = generate_original_style_excel(stock_name, stock_code, s, df_display)
             st.download_button(
-                label=f"📥 [{stock_name}] 원본 양식 엑셀 다운로드",
+                label=f"📥 [{stock_name}] 원본 양식 컬러 엑셀 다운로드",
                 data=excel_bytes,
                 file_name=f"0.ETF_{stock_code}_{stock_name}_{datetime.today().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
