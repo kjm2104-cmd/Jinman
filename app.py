@@ -5,6 +5,8 @@ import requests
 from datetime import datetime, timedelta
 from io import BytesIO
 from xml.etree import ElementTree as ET
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 # 모바일 화면 최적화 설정
 st.set_page_config(
@@ -156,7 +158,7 @@ def r10(val):
 def trunc_int(val):
     return int(np.trunc(val))
 
-# 표 스타일러 함수 (등락률 부호 직결 판별로 색상 정상화)
+# 표 스타일러 함수
 def style_table(df_target, df_full):
     cols_grad = ['MM', 'PM', 'LM', 'RM', 'S']
     col_bounds = {}
@@ -455,9 +457,164 @@ def calculate_indicator_sheet(df_raw):
         'B7': peak if state == 'UP' else trough,
         'B8': r10(peak * (1.0 - 0.095)) if state == 'UP' else r10(trough * 1.095),
         'B9': r10(peak * (1.0 - 0.045)) if state == 'UP' else r10(trough * 1.045),
-        'state': "상승 파동 진행 중" if state == 'UP' else "하락 파동 진행 중"
+        'state': "상승추세" if state == 'UP' else "하락추세"
     }
     return df_out, summary
+
+# 원본 엑셀 PPP 시트 형식으로 온전한 통합 엑셀 워크북 생성 함수
+def generate_original_style_excel(stock_name, stock_code, s, df_display):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "PPP"
+
+    # 기본 서식 스타일 정의
+    font_bold = Font(name="맑은 고딕", size=10, bold=True)
+    font_normal = Font(name="맑은 고딕", size=9)
+    font_title = Font(name="맑은 고딕", size=11, bold=True)
+    
+    fill_header = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+    fill_yellow = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+    fill_blue = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+
+    align_center = Alignment(horizontal="center", vertical="center")
+    align_right = Alignment(horizontal="right", vertical="center")
+    thin_border = Border(
+        left=Side(style='thin', color='D9D9D9'),
+        right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='thin', color='D9D9D9'),
+        bottom=Side(style='thin', color='D9D9D9')
+    )
+
+    # 1행~11행 상단 요약 대시보드 블록 구축
+    ws['A2'] = "기간설정"
+    ws['B2'] = "▼ 재무제표 ▼"
+    ws['A3'] = "2년 고정"
+    ws['B5'] = stock_name
+    ws['C5'] = stock_code
+    ws['B5'].font = font_title
+    ws['C5'].font = font_bold
+
+    ws['M2'] = "상승율"
+    ws['Q2'] = "하락율"
+    ws['M3'] = "하추대비"
+    ws['S3'] = "상추대비"
+    ws['M4'] = "조정대비"
+    ws['S4'] = "반등대비"
+    ws['O5'] = "U-point"
+    ws['O5'].font = font_bold
+
+    # 파동 기준 및 전환 가격
+    ws['A6'] = "일자"
+    ws['A7'] = "기준가"
+    ws['B7'] = s.get('B7', 0)
+    ws['A8'] = "전환가"
+    ws['B8'] = s.get('B8', 0)
+    ws['A9'] = "1차가격"
+    ws['B9'] = s.get('B9', 0)
+
+    for cell_id in ['A7', 'A8', 'A9']:
+        ws[cell_id].font = font_bold
+        ws[cell_id].fill = fill_header
+
+    # 파동 열 헤더 (M ~ S)
+    headers_wave = {
+        'M6': '부-반등', 'N6': '반등', 'O6': '상-추세',
+        'Q6': '하-추세', 'R6': '조정', 'S6': '부-조정'
+    }
+    for pos, text in headers_wave.items():
+        ws[pos] = text
+        ws[pos].font = font_bold
+        ws[pos].alignment = align_center
+        ws[pos].fill = fill_yellow
+
+    ws['N8'] = s.get('max_mn', 0)
+    ws['O8'] = s.get('max_mn', 0)
+    ws['Q8'] = s.get('min_pq', 0)
+    ws['R8'] = s.get('min_pq', 0)
+
+    # 현재 3M 대시보드 (Row 7~9, Col F~L)
+    ws['F7'] = "현재 3M"
+    ws['F7'].font = font_bold
+    ws['F8'] = "현재가격"
+    ws['G8'] = s.get('state', '')
+    ws['H8'] = "MM"
+    ws['I8'] = "PM"
+    ws['J8'] = "LM"
+    ws['K8'] = "S"
+    ws['L8'] = "RM"
+
+    ws['F9'] = s.get('B1', 0)
+    ws['F9'].font = font_title
+    ws['H9'] = s.get('MM', 0)
+    ws['I9'] = s.get('PM', 0)
+    ws['J9'] = s.get('LM', 0)
+    ws['K9'] = s.get('S', 0)
+    ws['L9'] = s.get('RM', 0)
+
+    for c in ['F8', 'G8', 'H8', 'I8', 'J8', 'K8', 'L8']:
+        ws[c].font = font_bold
+        ws[c].fill = fill_blue
+        ws[c].alignment = align_center
+    for c in ['H9', 'I9', 'J9', 'K9', 'L9']:
+        ws[c].font = font_bold
+        ws[c].alignment = align_center
+
+    # 12행부터 일별 시세 데이터 테이블 구축
+    data_headers = [
+        "일자", "종가(B)", "등락률(C)", "", "", "거래량(F)", "거래비율(G)",
+        "MM", "PM", "LM", "S", "RM",
+        "부-반등(M)", "반등(N)", "상-추세(O)", "", "하-추세(Q)", "조정(R)", "부-조정(S)"
+    ]
+
+    # 원본 순서(과거순)로 12행부터 작성
+    row_idx = 12
+    for _, r in df_display.iterrows():
+        ws.cell(row=row_idx, column=1, value=r['일자']).alignment = align_center
+        ws.cell(row=row_idx, column=2, value=int(r['종가(B)'])).number_format = '#,##0'
+        
+        try:
+            chg_val = float(str(r['등락률(C)']).replace('%', '').replace('+', '')) / 100.0
+            ws.cell(row=row_idx, column=3, value=chg_val).number_format = '+0.00%;-0.00%;0.00%'
+        except Exception:
+            ws.cell(row=row_idx, column=3, value=r['등락률(C)'])
+
+        ws.cell(row=row_idx, column=6, value=int(r['거래량(F)'])).number_format = '#,##0'
+        ws.cell(row=row_idx, column=7, value=float(r['거래비율(G)'])).number_format = '0.00'
+
+        ws.cell(row=row_idx, column=8, value=r['MM']).alignment = align_center
+        ws.cell(row=row_idx, column=9, value=r['PM']).alignment = align_center
+        ws.cell(row=row_idx, column=10, value=r['LM']).alignment = align_center
+        ws.cell(row=row_idx, column=11, value=r['S']).alignment = align_center
+        ws.cell(row=row_idx, column=12, value=r['RM']).alignment = align_center
+
+        for col_i, col_name in enumerate(['부-반등(M)', '반등(N)', '상-추세(O)'], start=13):
+            val = r.get(col_name)
+            if pd.notna(val) and str(val).strip() not in ['', '-']:
+                c_cell = ws.cell(row=row_idx, column=col_i, value=int(round(float(val))))
+                c_cell.number_format = '#,##0'
+                c_cell.alignment = align_right
+
+        for col_i, col_name in enumerate(['하-추세(Q)', '조정(R)', '부-조정(S)'], start=17):
+            val = r.get(col_name)
+            if pd.notna(val) and str(val).strip() not in ['', '-']:
+                c_cell = ws.cell(row=row_idx, column=col_i, value=int(round(float(val))))
+                c_cell.number_format = '#,##0'
+                c_cell.alignment = align_right
+
+        row_idx += 1
+
+    # 열 너비 정리
+    widths = {
+        'A': 12, 'B': 10, 'C': 10, 'D': 3, 'E': 3, 'F': 14, 'G': 9,
+        'H': 7, 'I': 7, 'J': 7, 'K': 7, 'L': 7,
+        'M': 10, 'N': 10, 'O': 10, 'P': 3, 'Q': 10, 'R': 10, 'S': 10
+    }
+    for col_letter, width in widths.items():
+        ws.column_dimensions[col_letter].width = width
+
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
 
 # 코스피 및 코스닥 지수 데이터 실시간 조회
 kospi_df, _ = get_naver_stock_data("KOSPI", count=5)
@@ -498,7 +655,7 @@ if stock_code:
                 target_prices_dict[s_tgt] = tp
                 target_prices_4step.append(f"<b>{name}</b>: <span style='color:#D32F2F;'>{tp:,}원</span> (S≤{s_tgt})")
 
-        # 상단 실전 액션 가이드 브리핑 (공통)
+        # 상단 실전 액션 가이드 브리핑
         if "강력진입구간" in cur_sig:
             action_title = f"🟣 [{cur_sig}] ➔ 4차 승부수 구간 도달!"
             action_desc = "S ≤ -55 1차 바닥권 도달! 4차 기본 비중(30%)을 집행합니다."
@@ -592,7 +749,7 @@ if stock_code:
         with tab2:
             st.markdown(f"#### 📢 [{s['date']}] {stock_name} 장 마감 종합 브리핑")
 
-            # 1. 🌐 전체 시장 종합 프리핑
+            # 1. 전체 시장 종합 프리핑
             if kosdaq_chg <= -1.5:
                 mkt_stage = "🚨 [지수 급락 / 공포 심리 고조]"
                 mkt_color = "#D32F2F"
@@ -623,7 +780,7 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # 2. 🕯️ 당일 캔들 형태 & 꼬리 분석
+            # 2. 당일 캔들 형태 & 꼬리 분석
             o_p, h_p, l_p, c_p = s['Open'], s['High'], s['Low'], s['B1']
             body_size = abs(c_p - o_p)
             candle_range = max(1, h_p - l_p)
@@ -661,7 +818,7 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # 3. ⚡ 거래량 시그널 & 바닥 경보
+            # 3. 거래량 시그널 & 바닥 경보
             vol_ratio_val = s['vol_ratio']
             if vol_ratio_val >= 1.5:
                 vol_badge = "🚨 [공포 투매 / 대량 손바뀜 발생]"
@@ -687,7 +844,7 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # 4. 🎯 다음 목표가까지 남은 거리 (D-Day 카운트다운)
+            # 4. 다음 목표가까지 남은 거리 (D-Day 카운트다운)
             curr_p = s['B1']
             tp_3 = target_prices_dict.get(-40, 0)
             tp_4 = target_prices_dict.get(-55, 0)
@@ -712,7 +869,7 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # 5. 📉 최근 5영업일 핵심 지표(S값) 궤적 추적
+            # 5. 최근 5영업일 핵심 지표(S값) 궤적 추적
             recent_5 = df_full_result.tail(5).copy()
             s_traj_html = " ➔ ".join([f"<b>{row['일자'][5:]}</b> (S: <code>{row['S']}</code>)" for _, row in recent_5.iterrows()])
             s_diff_5 = recent_5['S'].iloc[-1] - recent_5['S'].iloc[0]
@@ -728,7 +885,7 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # 6. 🧮 내 계좌 실전 탈출 시뮬레이터
+            # 6. 내 계좌 실전 탈출 시뮬레이터
             my_port_item = None
             if 'my_portfolio_items' in st.session_state:
                 for itm in st.session_state.my_portfolio_items:
@@ -768,7 +925,7 @@ if stock_code:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # 7. 🔗 [신형 네이버 증권 링크] 공시·뉴스 및 수급 원클릭 바로가기
+            # 7. 신형 네이버 증권 링크
             st.markdown(f"""
             <div class="brief-card" style="border-left: 5px solid #00897B;">
                 <div class="brief-title" style="color: #00897B;">7. 🔗 {stock_name} 상세 정보 원클릭 바로가기</div>
@@ -780,21 +937,19 @@ if stock_code:
 
             col_link1, col_link2 = st.columns(2)
             with col_link1:
-                # 📌 지정해주신 신형 뉴스/공시 페이지 URL 연동
                 st.link_button(
                     f"📋 {stock_name} 공시·뉴스 보러가기", 
                     f"https://stock.naver.com/domestic/stock/{stock_code}/news",
                     use_container_width=True
                 )
             with col_link2:
-                # 📌 신형 투자자별 매매동향 페이지 URL 연동
                 st.link_button(
                     f"👥 {stock_name} 매매동향(수급) 보러가기", 
                     f"https://stock.naver.com/domestic/stock/{stock_code}/trend",
                     use_container_width=True
                 )
 
-            # 8. 🧭 내일 장 시작 전 3대 체크포인트
+            # 8. 내일 장 시작 전 3대 체크포인트
             st.markdown(f"""
             <div class="brief-card" style="border-left: 5px solid #D32F2F; background-color: #FFF8E1; margin-top: 12px;">
                 <div class="brief-title" style="color: #D32F2F;">8. 🧭 내일 장 시작 전 3대 체크포인트 (내일 08:50 행동 요강)</div>
@@ -918,17 +1073,19 @@ if stock_code:
             fc3.metric("전체 총 평가 손익", f"{total_pl:,}원")
 
         # -----------------------------
-        # TAB 5: 엑셀 다운로드
+        # TAB 5: 엑셀 다운로드 (원본 PPP 시트 양식 100% 재현)
         # -----------------------------
         with tab5:
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_display.to_excel(writer, index=False, sheet_name="PPP")
+            st.markdown("##### 💾 엑셀 원본 양식 다운로드 (`PPP` 시트)")
+            st.caption("공유해주신 엑셀 원본 파일과 동일하게 상단 요약 대시보드(1~11행)와 하단 일별 파동 시세(12행~)가 온전히 포함된 공식 양식입니다.")
+            
+            excel_bytes = generate_original_style_excel(stock_name, stock_code, s, df_display)
             st.download_button(
-                label="📥 매매전략 엑셀 다운로드",
-                data=output.getvalue(),
+                label=f"📥 [{stock_name}] 원본 양식 엑셀 다운로드",
+                data=excel_bytes,
                 file_name=f"0.ETF_{stock_code}_{stock_name}_{datetime.today().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
             )
     else:
         st.error("입력하신 종목의 데이터를 찾을 수 없습니다. 올바른 종목명 또는 6자리 종목코드를 입력해 주세요.")
