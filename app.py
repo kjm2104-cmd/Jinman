@@ -53,35 +53,42 @@ st.markdown("""
 
 st.subheader("📈 매매 시스템")
 
-# 포트폴리오 영구 저장/불러오기 함수
+# 포트폴리오 & 계좌 정보(원금, 예수금) 영구 저장/불러오기 함수
 PORTFOLIO_FILE = "portfolio_data.json"
 
 def load_saved_portfolio():
+    default_data = {
+        "user_principal": 30000000,  # 기본 내 투자 원금 (예: 3천만원)
+        "user_cash": 10000000,       # 기본 예수금 (예: 1천만원)
+        "items": [
+            {"id": 1, "input_val": "233740", "confirmed_code": "233740", "confirmed_name": "KODEX 코스닥150레버리지", "qty": 5717, "avg_price": 5330},
+            {"id": 2, "input_val": "251340", "confirmed_code": "251340", "confirmed_name": "KODEX 코스닥150선물인버스", "qty": 0, "avg_price": 0}
+        ]
+    }
     if os.path.exists(PORTFOLIO_FILE):
         try:
             with open(PORTFOLIO_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                if isinstance(data, list) and len(data) > 0:
+                if isinstance(data, dict):
                     return data
+                elif isinstance(data, list):  # 구버전 호환용
+                    default_data["items"] = data
+                    return default_data
         except Exception:
             pass
-    # 기본 초기값 (레버리지 233740 및 인버스 251340 헤지 세팅)
-    return [
-        {"id": 1, "input_val": "233740", "confirmed_code": "233740", "confirmed_name": "KODEX 코스닥150레버리지", "qty": 5717, "avg_price": 5330},
-        {"id": 2, "input_val": "251340", "confirmed_code": "251340", "confirmed_name": "KODEX 코스닥150선물인버스", "qty": 0, "avg_price": 0}
-    ]
+    return default_data
 
-def save_current_portfolio(items):
+def save_current_portfolio(data_to_save):
     try:
         with open(PORTFOLIO_FILE, "w", encoding="utf-8") as f:
-            json.dump(items, f, ensure_ascii=False, indent=2)
+            json.dump(data_to_save, f, ensure_ascii=False, indent=2)
         return True
     except Exception:
         return False
 
 # 세션 초기화 시 파일에서 영구 저장 데이터 로드
-if 'my_portfolio_items' not in st.session_state:
-    st.session_state.my_portfolio_items = load_saved_portfolio()
+if 'account_data' not in st.session_state:
+    st.session_state.account_data = load_saved_portfolio()
 
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=300)
@@ -1053,8 +1060,8 @@ if stock_code:
 
             # 6. 내 계좌 실전 탈출 시뮬레이터
             my_port_item = None
-            if 'my_portfolio_items' in st.session_state:
-                for itm in st.session_state.my_portfolio_items:
+            if 'items' in st.session_state.account_data:
+                for itm in st.session_state.account_data['items']:
                     if itm.get('confirmed_code') == stock_code and itm.get('qty', 0) > 0:
                         my_port_item = itm
                         break
@@ -1177,33 +1184,62 @@ if stock_code:
             st.dataframe(pd.DataFrame(calc_def), use_container_width=True)
 
         # -----------------------------
-        # TAB 4: 보유 포트폴리오 (영구 저장 & 롱-숏 헤지 진단 탑재)
+        # TAB 4: 보유 포트폴리오 (원금·예수금·종목·수량 통합 영구 저장)
         # -----------------------------
         with tab4:
-            st.markdown("##### 💼 실전 보유 포트폴리오 성과 분석 & 헤지 진단기")
-            st.caption("수량 및 평단가 수정 후 상단의 [💾 포트폴리오 영구 저장] 버튼을 누르면 새로고침(F5)을 해도 절대 초기화되지 않고 안전하게 보존됩니다.")
+            st.markdown("##### 💼 실전 보유 포트폴리오 & 총 계좌 자산 관리")
+            st.caption("내 투자 원금, 예수금, 종목 수량 및 평단가를 수정한 뒤 아래 [💾 포트폴리오 및 계좌 정보 영구 저장] 버튼을 누르면 새로고침(F5)을 해도 100% 안전하게 유지됩니다.")
 
-            col_btn1, col_btn2 = st.columns([1.5, 3.5])
-            with col_btn1:
-                if st.button("💾 포트폴리오 영구 저장 (새로고침 방지)", use_container_width=True):
-                    if save_current_portfolio(st.session_state.my_portfolio_items):
-                        st.success("✅ 파일에 안전하게 저장되었습니다! 이제 새로고침해도 유지됩니다.")
+            # A. 내 투자 원금 & 현재 예수금 입력 영역
+            col_acc1, col_acc2, col_acc3 = st.columns([1.5, 1.5, 1.5])
+            with col_acc1:
+                user_principal = st.number_input(
+                    "💰 내 총 투자 원금 (원)",
+                    min_value=0,
+                    value=int(st.session_state.account_data.get("user_principal", 30000000)),
+                    step=1000000,
+                    format="%d",
+                    key="input_user_principal"
+                )
+            with col_acc2:
+                user_cash = st.number_input(
+                    "💵 현재 계좌 예수금(현금) (원)",
+                    min_value=0,
+                    value=int(st.session_state.account_data.get("user_cash", 10000000)),
+                    step=500000,
+                    format="%d",
+                    key="input_user_cash"
+                )
+            with col_acc3:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("💾 포트폴리오 및 계좌 정보 영구 저장", use_container_width=True):
+                    # 세션 및 JSON 파일에 저장
+                    data_to_save = {
+                        "user_principal": user_principal,
+                        "user_cash": user_cash,
+                        "items": st.session_state.account_data["items"]
+                    }
+                    st.session_state.account_data = data_to_save
+                    if save_current_portfolio(data_to_save):
+                        st.success("✅ 원금, 예수금, 종목 정보가 안전하게 영구 저장되었습니다! (새로고침 시 유지)")
                     else:
                         st.error("저장 중 오류가 발생했습니다.")
-            with col_btn2:
-                if st.button("➕ 보유 종목 추가하기"):
-                    new_id = max([item["id"] for item in st.session_state.my_portfolio_items], default=0) + 1
-                    st.session_state.my_portfolio_items.append({"id": new_id, "input_val": "", "confirmed_code": "233740", "confirmed_name": "", "qty": 0, "avg_price": 0})
-                    st.rerun()
 
-            total_invested_all = 0
-            total_eval_all = 0
+            st.markdown("---")
+            if st.button("➕ 보유 종목 추가하기"):
+                new_id = max([item["id"] for item in st.session_state.account_data["items"]], default=0) + 1
+                st.session_state.account_data["items"].append({
+                    "id": new_id, "input_val": "", "confirmed_code": "233740", "confirmed_name": "", "qty": 0, "avg_price": 0
+                })
+                st.rerun()
+
+            total_invested_stocks = 0
+            total_eval_stocks = 0
             items_to_delete = []
-
-            # 종목별 실시간 평가액 딕셔너리
             stock_eval_dict = {}
 
-            for idx, item in enumerate(st.session_state.my_portfolio_items):
+            # 종목별 입력 테이블
+            for idx, item in enumerate(st.session_state.account_data["items"]):
                 cols = st.columns([1.6, 0.9, 0.9, 0.9, 1.1, 0.5])
                 with cols[0]:
                     item["input_val"] = st.text_input(f"종목명/코드 {idx+1}", value=item["input_val"], key=f"mp_input_{item['id']}")
@@ -1235,33 +1271,39 @@ if stock_code:
                     if st.button("❌", key=f"del_mp_{item['id']}"):
                         items_to_delete.append(item)
 
-                total_invested_all += invest_item
-                total_eval_all += eval_item
+                total_invested_stocks += invest_item
+                total_eval_stocks += eval_item
 
             if items_to_delete:
                 for itm in items_to_delete:
-                    st.session_state.my_portfolio_items.remove(itm)
-                save_current_portfolio(st.session_state.my_portfolio_items)
+                    st.session_state.account_data["items"].remove(itm)
+                save_current_portfolio({
+                    "user_principal": user_principal,
+                    "user_cash": user_cash,
+                    "items": st.session_state.account_data["items"]
+                })
                 st.rerun()
 
             st.markdown("---")
-            total_pl = total_eval_all - total_invested_all
-            total_pl_rate = (total_eval_all / total_invested_all - 1.0) * 100 if total_invested_all > 0 else 0
-            fc1, fc2, fc3 = st.columns(3)
-            fc1.metric("전체 총 투자원금", f"{total_invested_all:,}원")
-            fc2.metric("전체 총 평가금액", f"{total_eval_all:,}원", f"{total_pl_rate:+.2f}%")
-            fc3.metric("전체 총 평가 손익", f"{total_pl:,}원")
+            # B. 계좌 종합 요약 대시보드 (주식 + 예수금 + 원금 대비 순수익)
+            total_account_assets = total_eval_stocks + user_cash  # 총자산 = 주식평가액 + 예수금
+            net_profit_total = total_account_assets - user_principal  # 총자산 - 내 원금
+            net_profit_rate = (net_profit_total / user_principal * 100) if user_principal > 0 else 0.0
+
+            fc1, fc2, fc3, fc4 = st.columns(4)
+            fc1.metric("내 총 투자 원금", f"{user_principal:,}원")
+            fc2.metric("보유 주식 총 평가액", f"{total_eval_stocks:,}원", f"{((total_eval_stocks/total_invested_stocks - 1.0)*100 if total_invested_stocks>0 else 0):+.2f}% (매입대비)")
+            fc3.metric("계좌 예수금 (현금)", f"{user_cash:,}원", f"비중 {(user_cash/total_account_assets*100 if total_account_assets>0 else 0):.1f}%")
+            fc4.metric("계좌 총자산 (주식+현금)", f"{total_account_assets:,}원", f"{net_profit_rate:+.2f}% ({net_profit_total:+,}원)")
 
             # ------------------------------------------------------------------
-            # 🛡️ [특화 헤지 진단] 레버리지(233740) vs 선물인버스(251340) 50% 헤지 비율 진단
+            # 🛡️ [헤지 & 비중 진단] 레버리지(233740) vs 선물인버스(251340) 스마트 진단
             # ------------------------------------------------------------------
             st.markdown("---")
             st.markdown("##### 🛡️ 레버리지 vs 선물인버스 스마트 헤지(50% 롱-숏) 진단")
             
             lev_val = stock_eval_dict.get("233740", 0)
             inv_val = stock_eval_dict.get("251340", 0)
-            
-            # 인버스 권장 적정액 = 레버리지 평가액의 50%
             target_inv_hedge = lev_val * 0.50
             hedge_diff = inv_val - target_inv_hedge
             actual_hedge_ratio = (inv_val / lev_val * 100) if lev_val > 0 else 0.0
