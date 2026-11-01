@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
+import json
+import os
 from datetime import datetime, timedelta
 from io import BytesIO
 from xml.etree import ElementTree as ET
@@ -51,6 +53,36 @@ st.markdown("""
 
 st.subheader("📈 매매 시스템")
 
+# 포트폴리오 영구 저장/불러오기 함수
+PORTFOLIO_FILE = "portfolio_data.json"
+
+def load_saved_portfolio():
+    if os.path.exists(PORTFOLIO_FILE):
+        try:
+            with open(PORTFOLIO_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list) and len(data) > 0:
+                    return data
+        except Exception:
+            pass
+    # 기본 초기값 (레버리지 233740 및 인버스 251340 헤지 세팅)
+    return [
+        {"id": 1, "input_val": "233740", "confirmed_code": "233740", "confirmed_name": "KODEX 코스닥150레버리지", "qty": 5717, "avg_price": 5330},
+        {"id": 2, "input_val": "251340", "confirmed_code": "251340", "confirmed_name": "KODEX 코스닥150선물인버스", "qty": 0, "avg_price": 0}
+    ]
+
+def save_current_portfolio(items):
+    try:
+        with open(PORTFOLIO_FILE, "w", encoding="utf-8") as f:
+            json.dump(items, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+# 세션 초기화 시 파일에서 영구 저장 데이터 로드
+if 'my_portfolio_items' not in st.session_state:
+    st.session_state.my_portfolio_items = load_saved_portfolio()
+
 # 네이버 금융 일별 시세 크롤링 함수
 @st.cache_data(ttl=300)
 def get_naver_stock_data(code, count=1500):
@@ -99,6 +131,8 @@ name_to_code = {
     "삼성전자": "005930",
     "KODEX 코스닥150레버리지": "233740",
     "코스닥150레버리지": "233740",
+    "KODEX 코스닥150선물인버스": "251340",
+    "코스닥150선물인버스": "251340",
     "KODEX 200": "069500",
     "SK하이닉스": "000660",
     "LG에너지솔루션": "373220",
@@ -111,6 +145,7 @@ code_to_name = {
     "KOSDAQ": "코스닥지수",
     "005930": "삼성전자",
     "233740": "KODEX 코스닥150레버리지",
+    "251340": "KODEX 코스닥150선물인버스",
     "069500": "KODEX 200",
     "000660": "SK하이닉스",
     "373220": "LG에너지솔루션",
@@ -464,7 +499,7 @@ def calculate_indicator_sheet(df_raw):
 def rgb_to_hex(r, g, b):
     return f"{max(0, min(255, int(r))):02X}{max(0, min(255, int(g))):02X}{max(0, min(255, int(b))):02X}"
 
-# 원본 엑셀 PPP 시트 + 매수신호 통합 + 화면과 100% 동일한 MM/PM/LM/S/RM 컬러링 생성 함수
+# 원본 엑셀 PPP 시트 생성 함수
 def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full_result, reverse_order=True):
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -501,7 +536,6 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full
         vals = pd.to_numeric(df_full_result[c], errors='coerce')
         col_bounds[c] = (vals.min(), vals.max())
 
-    # 1행~11행 상단 요약 대시보드
     ws['A2'] = "기간설정"
     ws['B2'] = "▼ 재무제표 ▼"
     ws['A3'] = "최신순 정렬" if reverse_order else "과거순 정렬"
@@ -598,7 +632,6 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full
 
     df_to_export = df_display.iloc[::-1].copy() if reverse_order else df_display.copy()
 
-    # 12행부터 일별 시세 데이터 테이블 작성
     row_idx = 12
     for _, r in df_to_export.iterrows():
         c_a = ws.cell(row=row_idx, column=1, value=r['일자'])
@@ -1144,22 +1177,31 @@ if stock_code:
             st.dataframe(pd.DataFrame(calc_def), use_container_width=True)
 
         # -----------------------------
-        # TAB 4: 보유 포트폴리오 (실시간 리밸런싱 경보 카드 탑재)
+        # TAB 4: 보유 포트폴리오 (영구 저장 & 롱-숏 헤지 진단 탑재)
         # -----------------------------
         with tab4:
-            st.markdown("##### 💼 실전 보유 포트폴리오 다중 종목 성과 분석기")
-            if 'my_portfolio_items' not in st.session_state:
-                st.session_state.my_portfolio_items = [
-                    {"id": 1, "input_val": "233740", "confirmed_code": "233740", "confirmed_name": "KODEX 코스닥150레버리지", "qty": 5717, "avg_price": 5330}
-                ]
-            if st.button("➕ 보유 종목 추가하기"):
-                new_id = max([item["id"] for item in st.session_state.my_portfolio_items], default=0) + 1
-                st.session_state.my_portfolio_items.append({"id": new_id, "input_val": "", "confirmed_code": "233740", "confirmed_name": "", "qty": 0, "avg_price": 0})
-                st.rerun()
+            st.markdown("##### 💼 실전 보유 포트폴리오 성과 분석 & 헤지 진단기")
+            st.caption("수량 및 평단가 수정 후 상단의 [💾 포트폴리오 영구 저장] 버튼을 누르면 새로고침(F5)을 해도 절대 초기화되지 않고 안전하게 보존됩니다.")
+
+            col_btn1, col_btn2 = st.columns([1.5, 3.5])
+            with col_btn1:
+                if st.button("💾 포트폴리오 영구 저장 (새로고침 방지)", use_container_width=True):
+                    if save_current_portfolio(st.session_state.my_portfolio_items):
+                        st.success("✅ 파일에 안전하게 저장되었습니다! 이제 새로고침해도 유지됩니다.")
+                    else:
+                        st.error("저장 중 오류가 발생했습니다.")
+            with col_btn2:
+                if st.button("➕ 보유 종목 추가하기"):
+                    new_id = max([item["id"] for item in st.session_state.my_portfolio_items], default=0) + 1
+                    st.session_state.my_portfolio_items.append({"id": new_id, "input_val": "", "confirmed_code": "233740", "confirmed_name": "", "qty": 0, "avg_price": 0})
+                    st.rerun()
 
             total_invested_all = 0
             total_eval_all = 0
             items_to_delete = []
+
+            # 종목별 실시간 평가액 딕셔너리
+            stock_eval_dict = {}
 
             for idx, item in enumerate(st.session_state.my_portfolio_items):
                 cols = st.columns([1.6, 0.9, 0.9, 0.9, 1.1, 0.5])
@@ -1180,6 +1222,10 @@ if stock_code:
                 live_df, _ = get_naver_stock_data(item["confirmed_code"], count=5)
                 live_curr_price = int(live_df['Close'].iloc[-1]) if live_df is not None and not live_df.empty else item["avg_price"]
 
+                eval_item = item["qty"] * live_curr_price
+                invest_item = item["qty"] * item["avg_price"]
+                stock_eval_dict[item["confirmed_code"]] = eval_item
+
                 with cols[4]:
                     disp_name = item["confirmed_name"] if item["confirmed_name"] else "종목 미조회"
                     st.markdown(f"<div style='font-size: 0.75rem; color: #555;'><b>{disp_name}</b></div>", unsafe_allow_html=True)
@@ -1189,12 +1235,13 @@ if stock_code:
                     if st.button("❌", key=f"del_mp_{item['id']}"):
                         items_to_delete.append(item)
 
-                total_invested_all += item["qty"] * item["avg_price"]
-                total_eval_all += item["qty"] * live_curr_price
+                total_invested_all += invest_item
+                total_eval_all += eval_item
 
             if items_to_delete:
                 for itm in items_to_delete:
                     st.session_state.my_portfolio_items.remove(itm)
+                save_current_portfolio(st.session_state.my_portfolio_items)
                 st.rerun()
 
             st.markdown("---")
@@ -1206,62 +1253,45 @@ if stock_code:
             fc3.metric("전체 총 평가 손익", f"{total_pl:,}원")
 
             # ------------------------------------------------------------------
-            # 🔔 [신규] 반기 점검 + 밴드 룰(±10%p) 실시간 리밸런싱 경보 카드
+            # 🛡️ [특화 헤지 진단] 레버리지(233740) vs 선물인버스(251340) 50% 헤지 비율 진단
             # ------------------------------------------------------------------
             st.markdown("---")
-            st.markdown("##### ⚖️ 계좌 자산배분 & 실시간 리밸런싱 경보 (1안: 70:30 + 밴드 룰)")
+            st.markdown("##### 🛡️ 레버리지 vs 선물인버스 스마트 헤지(50% 롱-숏) 진단")
             
-            c_cash1, c_cash2 = st.columns([1.5, 2.5])
-            with c_cash1:
-                my_cash_reserve = st.number_input(
-                    "💵 현재 계좌 내 예비 현금(예수금)",
-                    min_value=0,
-                    value=int(total_invested_all * 0.3) if total_invested_all > 0 else 10000000,
-                    step=500000,
-                    format="%d"
-                )
+            lev_val = stock_eval_dict.get("233740", 0)
+            inv_val = stock_eval_dict.get("251340", 0)
             
-            total_portfolio_wealth = total_eval_all + my_cash_reserve
-            stock_ratio = (total_eval_all / total_portfolio_wealth * 100) if total_portfolio_wealth > 0 else 0.0
-            cash_ratio = (my_cash_reserve / total_portfolio_wealth * 100) if total_portfolio_wealth > 0 else 0.0
+            # 인버스 권장 적정액 = 레버리지 평가액의 50%
+            target_inv_hedge = lev_val * 0.50
+            hedge_diff = inv_val - target_inv_hedge
+            actual_hedge_ratio = (inv_val / lev_val * 100) if lev_val > 0 else 0.0
 
-            with c_cash2:
+            if lev_val > 0:
+                if current_s_val >= 0:
+                    hg_badge = "🔵 [지표 회복/고점] 인버스 진입 검토 구간 (S ≥ 0)"
+                    hg_color = "#1976D2"
+                    hg_desc = f"현재 메인 종목의 S값이 회복된 고점 영역입니다. 레버리지 물량을 일부 익절하고, 레버리지 평가액({lev_val:,}원)의 <b>약 50% 수준({int(target_inv_hedge):,}원)</b>으로 인버스에 진입하여 하락장 방어 태세를 갖추는 것이 유리합니다."
+                elif current_s_val <= -40:
+                    hg_badge = "🔴 [바닥권 도달] 인버스 전량 익절 & 레버리지 전환 구간 (S ≤ -40)"
+                    hg_color = "#D32F2F"
+                    hg_desc = f"현재 메인 종목이 3~4차 바닥권(S≤-40)에 도달했습니다. 보유 중인 <b>인버스 물량을 전량 매도(수익 실현)</b>하고, 그 자금으로 레버리지 3~4차 방어선 매수에 집중 투입하세요."
+                else:
+                    hg_badge = "⚖️ [헤지 균형 점검] 인버스 50% 적정 비중 유지 국면"
+                    hg_color = "#2E7D32"
+                    hg_desc = f"현재 인버스 헤지 비율은 레버리지 대비 <b>{actual_hedge_ratio:.1f}%</b> (보유액: {inv_val:,}원 / 권장 50%: {int(target_inv_hedge):,}원)입니다.<br>" \
+                              f"{'인버스 비중이 적정 수준(50% 내외)으로 잘 세팅되어 있습니다.' if abs(actual_hedge_ratio - 50) <= 15 else f'권장 50% 비중에 맞추려면 인버스를 약 {int(abs(hedge_diff)):,}원 상당 추가 조정하세요.'}"
+
                 st.markdown(f"""
-                <div style="background-color:#F8F9FA; border-radius:6px; padding:10px 14px; margin-top:24px; font-size:0.88rem; color:#222;">
-                    총 자산: <b>{total_portfolio_wealth:,}원</b> | 
-                    주식 비중: <b style="color:{'#D32F2F' if stock_ratio > 80 else ('#1976D2' if stock_ratio < 60 else '#2E7D32')};">{stock_ratio:.1f}%</b> | 
-                    현금 비중: <b>{cash_ratio:.1f}%</b> (목표 기준 <b>70 : 30</b>)
+                <div class="brief-card" style="border-left: 6px solid {hg_color}; background-color: #FAFAFA;">
+                    <div class="brief-title" style="color: {hg_color}; font-size: 0.98rem;">{hg_badge}</div>
+                    <div style="font-size: 0.88rem; color: #222; line-height: 1.6;">
+                        • <b>현재 보유 현황</b>: 레버리지 평가액 <b>{lev_val:,}원</b> | 인버스 평가액 <b>{inv_val:,}원</b> (헤지 비율: <b>{actual_hedge_ratio:.1f}%</b>)<br>
+                        • <b>실전 가이드</b>: {hg_desc}
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
-
-            # 밴드 룰 판정 (허용 오차 ±10%p: 60% ~ 80%)
-            target_stock_val = total_portfolio_wealth * 0.70
-            rebalance_diff = total_eval_all - target_stock_val
-
-            if stock_ratio >= 80.0:
-                reb_badge = "🔵 [상방 밴드 이탈] 익절 리밸런싱 권장 경보"
-                reb_color = "#1976D2"
-                reb_desc = f"주가 상승으로 주식 비중이 <b>{stock_ratio:.1f}%</b>까지 불어났습니다 (허용 밴드 상한 80% 초과).<br>" \
-                           f"<b>💡 실전 행동 지침</b>: 반기 점검일 이전이라도, 주식 평가액 중 약 <b>{int(rebalance_diff):,}원</b> 상당을 분할 매도(익절)하여 예비 현금 비중 30%를 다시 채워두세요."
-            elif stock_ratio <= 60.0 and total_portfolio_wealth > 0:
-                reb_badge = "🔴 [하방 밴드 이탈] 방어선 매수 리밸런싱 권장 경보"
-                reb_color = "#D32F2F"
-                reb_desc = f"주가 하락 또는 현금 과다로 주식 비중이 <b>{stock_ratio:.1f}%</b>로 축소되었습니다 (허용 밴드 하한 60% 미달).<br>" \
-                           f"<b>💡 실전 행동 지침</b>: 손절하지 마시고, 보유 중인 예비 현금 중 약 <b>{int(abs(rebalance_diff)):,}원</b>을 1안 방어선(2차 방어선 S≤-40, 최후 방어선 S≤-55) 가격에 지정가 매수하여 평단가를 낮추고 원래 비중(70%)으로 복원하세요."
             else:
-                reb_badge = "🟢 [정상 유지] 포트폴리오 비중 균형 유지 중"
-                reb_color = "#2E7D32"
-                reb_desc = f"현재 주식 비중 <b>{stock_ratio:.1f}%</b>는 밴드 룰 허용 범위(60% ~ 80%) 내에 안정적으로 위치해 있습니다.<br>" \
-                           f"<b>💡 실전 행동 지침</b>: 조기 매매 없이 다음 정기 반기 점검일(6월 말 / 12월 말)까지 현재 포지션을 그대로 유지하세요."
-
-            st.markdown(f"""
-            <div class="brief-card" style="border-left: 6px solid {reb_color}; background-color: #FAFAFA; margin-top: 10px;">
-                <div class="brief-title" style="color: {reb_color}; font-size: 1.0rem;">{reb_badge}</div>
-                <div style="font-size: 0.88rem; color: #222; line-height: 1.6;">
-                    {reb_desc}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+                st.info("💡 포트폴리오 목록에 [KODEX 코스닥150레버리지(233740)]를 등록하시면 50% 선물인버스 헤지 진단이 활성화됩니다.")
 
         # -----------------------------
         # TAB 5: 엑셀 다운로드 (정렬 일치 & 지표 컬러 완벽 동기화)
