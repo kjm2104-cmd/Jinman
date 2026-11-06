@@ -83,7 +83,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("🔥 스마트 파동 매매 Pro Max (지표 컬러 · 차트/백테스팅 · 심리 안정 브리핑 통합판)")
+st.subheader("🔥 스마트 파동 매매 Pro Max ver1106")
 
 # ---------------------------------------------------------
 # 2. 포트폴리오 & 즐겨찾기 영구 저장 관리
