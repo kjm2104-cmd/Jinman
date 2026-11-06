@@ -6,33 +6,14 @@ import json
 import os
 import re
 from datetime import datetime, timedelta
+from io import BytesIO
 from xml.etree import ElementTree as ET
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import matplotlib.font_manager as fm
-
-# ---------------------------------------------------------
-# 0. 한글 폰트 자동 설정 (Matplotlib 차트 깨짐 방지)
-# ---------------------------------------------------------
-def configure_matplotlib_korean_font():
-    preferred_fonts = [
-        "NanumGothic", "Malgun Gothic", "AppleGothic",
-        "Noto Sans CJK KR", "Noto Sans KR", "UnDotum", "DejaVu Sans"
-    ]
-    available_fonts = {f.name for f in fm.fontManager.ttflist}
-    for font_name in preferred_fonts:
-        if font_name in available_fonts:
-            plt.rcParams["font.family"] = font_name
-            break
-    plt.rcParams["axes.unicode_minus"] = False
-
-configure_matplotlib_korean_font()
 
 # ---------------------------------------------------------
 # 1. 페이지 기본 설정 및 커스텀 CSS
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="스마트 파동 매매 Pro Max ",
+    page_title="스마트 파동 매매 Pro Max [공격형 Alpha]",
     page_icon="🔥",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -280,10 +261,6 @@ def trunc_int(val):
     return int(np.trunc(val))
 
 def calc_exact_s_target_price(active_high, active_low, s_target, is_etf=False):
-    """
-    S값 공식: trunc_int(((p / active_low - 1)*100) - ((active_high / active_low - 1)*100)) <= s_target
-    절사(trunc_int) 및 호가단위 반올림으로 인해 목표 단가에서 S값이 1 부족하게 나오는 현상을 보정합니다.
-    """
     if active_high <= 0 or active_low <= 0:
         return 0
     raw_tp = active_high + (s_target * active_low) / 100.0
@@ -292,7 +269,6 @@ def calc_exact_s_target_price(active_high, active_low, s_target, is_etf=False):
     cand = round_tick(raw_tp, is_etf=is_etf)
     tick = get_krx_tick_size(cand, is_etf=is_etf)
     mm_raw = (active_high / active_low - 1.0) * 100.0
-    # cand에서 실제 계산된 s_val이 s_target 이하가 되도록 호가 보정
     for _ in range(5):
         lm_raw = (cand / active_low - 1.0) * 100.0
         s_check = trunc_int(lm_raw - mm_raw)
@@ -527,7 +503,6 @@ def calculate_indicator_sheet(df_raw):
     vol_ratio[1:] = np.round(vols[1:] / np.where(vols[:-1] == 0, 1, vols[:-1]), 2)
 
     mm_list, pm_list, lm_list, s_list, rm_list = [], [], [], [], []
-    act_high_list, act_low_list, wave_peak_list = [], [], []
     m_col, n_col, o_col, q_col, r_col, s_col = [None] * n, [None] * n, [None] * n, [None] * n, [None] * n, [None] * n
     buy_signals = []
 
@@ -603,9 +578,6 @@ def calculate_indicator_sheet(df_raw):
         lm_list.append(lm)
         s_list.append(s_val)
         rm_list.append(rm)
-        act_high_list.append(active_high)
-        act_low_list.append(active_low if active_low > 0 else np.nan)
-        wave_peak_list.append(ref_wave_high)
         buy_signals.append(sig)
 
         if i == 0:
@@ -694,12 +666,7 @@ def calculate_indicator_sheet(df_raw):
         "하-추세(Q)": q_col,
         "조정(R)": r_col,
         "부-조정(S)": s_col,
-        "MA200": ma200,
-        "MA20": ma20,
-        "MA60": ma60,
-        "ActiveHigh": act_high_list,
-        "ActiveLow": act_low_list,
-        "WavePeak": wave_peak_list
+        "MA200": np.round(ma200).astype(int)
     })
 
     next_high = pending_high if pending_high is not None else active_high
@@ -732,14 +699,9 @@ def calculate_indicator_sheet(df_raw):
     return df_out, summary
 
 # ---------------------------------------------------------
-# 7. 공격형 Alpha 백테스팅 시뮬레이션 엔진 & 통계 계산
+# 7. 공격형 Alpha 백테스팅 엔진 & SVG 네이티브 차트 렌더러 (외부 패키지 불필요)
 # ---------------------------------------------------------
 def run_alpha_backtest(df_period, initial_capital=30000000):
-    """
-    공격형 Alpha 분할 매수(2차 5%, 3차 25%, 4차 40%, 예비1차 10%, 예비2차 20%) 및
-    분할 익절(1차 S>=-5 & 수익률>=3% 시 20%, 2차 S>=0 & 수익률>=5% 시 35%, 3차 청산신호/트레일링 전량)
-    시뮬레이션을 수행합니다.
-    """
     if df_period.empty:
         return None
 
@@ -753,7 +715,6 @@ def run_alpha_backtest(df_period, initial_capital=30000000):
     avg_price = 0.0
     cycle_seed = float(initial_capital)
 
-    # 현재 사이클에서 어느 단계까지 매수/매도했는지 추적
     bought_stages = set()
     sold_stages = set()
     peak_since_buy = 0.0
@@ -764,16 +725,14 @@ def run_alpha_backtest(df_period, initial_capital=30000000):
     bnh_curve = []
     trades = []
     completed_cycles = []
-    cycle_entry_date = None
-    cycle_invested = 0.0
     cycle_realized_pnl = 0.0
 
     stage_weights = {
-        "S2": 0.05,  # 2차 진입 (S <= -32)
-        "S3": 0.25,  # 3차 진입 (S <= -40)
-        "S4": 0.40,  # 4차 승부수 (S <= -55)
-        "R1": 0.10,  # 예비 1차 (4차 이후 재차 S <= -45)
-        "R2": 0.20,  # 예비 2차 (예비1차 이후 S <= -60)
+        "S2": 0.05,
+        "S3": 0.25,
+        "S4": 0.40,
+        "R1": 0.10,
+        "R2": 0.20,
     }
 
     for i in range(len(df_period)):
@@ -788,15 +747,12 @@ def run_alpha_backtest(df_period, initial_capital=30000000):
             sold_stages.clear()
             peak_since_buy = 0.0
             days_since_stage4 = 0
-            cycle_entry_date = None
-            cycle_invested = 0.0
             cycle_realized_pnl = 0.0
         else:
             peak_since_buy = max(peak_since_buy, p)
             if "S4" in bought_stages:
                 days_since_stage4 += 1
 
-        # 1) 매수 로직 점검 (단계별 분할 진입)
         buy_triggers = []
         if sv <= -32 and "S2" not in bought_stages:
             buy_triggers.append(("S2", "2차 진입(5%)", stage_weights["S2"]))
@@ -820,9 +776,6 @@ def run_alpha_backtest(df_period, initial_capital=30000000):
                 cash -= cost
                 bought_stages.add(stg_code)
                 sold_stages.clear()
-                if cycle_entry_date is None:
-                    cycle_entry_date = dt
-                cycle_invested += cost
                 peak_since_buy = max(peak_since_buy, p)
                 trades.append({
                     "일자": dt,
@@ -836,12 +789,10 @@ def run_alpha_backtest(df_period, initial_capital=30000000):
                     "실현손익": "-"
                 })
 
-        # 2) 매도 로직 점검 (보유 수량이 있을 때)
         if shares > 0 and avg_price > 0:
             cur_ret = (p / avg_price - 1.0) * 100.0
             drawdown_from_peak = (p / peak_since_buy - 1.0) * 100.0 if peak_since_buy > 0 else 0.0
 
-            # (A) 비상 리스크컷: 예비탄까지 소진 후 평단 -15% 이탈
             if "R1" in bought_stages and cur_ret <= -15.0:
                 sell_qty = shares
                 proceeds = sell_qty * p
@@ -857,7 +808,6 @@ def run_alpha_backtest(df_period, initial_capital=30000000):
                 completed_cycles.append(cycle_realized_pnl)
                 avg_price = 0.0
 
-            # (B) 3차 전량 청산: 상투/음봉 청산 신호(수익권) 또는 고점 대비 -4.5% 트레일링 스탑(2차 익절 이후)
             elif (("청산" in sig and cur_ret > 1.5) or ("TP2" in sold_stages and drawdown_from_peak <= -4.5)):
                 sell_qty = shares
                 proceeds = sell_qty * p
@@ -874,9 +824,8 @@ def run_alpha_backtest(df_period, initial_capital=30000000):
                 completed_cycles.append(cycle_realized_pnl)
                 avg_price = 0.0
 
-            # (C) 2차 집중익절: S >= 0 & 수익권(+4% 이상)
             elif sv >= 0 and cur_ret >= 4.0 and "TP2" not in sold_stages:
-                sell_ratio = 0.4375 if "TP1" in sold_stages else 0.55  # 전체의 35% 해당분
+                sell_ratio = 0.4375 if "TP1" in sold_stages else 0.55
                 sell_qty = max(1, int(round(shares * sell_ratio)))
                 if sell_qty >= shares:
                     sell_qty = shares
@@ -895,7 +844,6 @@ def run_alpha_backtest(df_period, initial_capital=30000000):
                     completed_cycles.append(cycle_realized_pnl)
                     avg_price = 0.0
 
-            # (D) 1차 선제익절: S >= -5 & 수익권(+2% 이상)
             elif sv >= -5 and cur_ret >= 2.0 and "TP1" not in sold_stages:
                 sell_qty = max(1, int(round(shares * 0.20)))
                 if sell_qty < shares:
@@ -933,10 +881,9 @@ def run_alpha_backtest(df_period, initial_capital=30000000):
     win_rate = (win_cycles / len(completed_cycles) * 100.0) if completed_cycles else 0.0
 
     curve_df = pd.DataFrame({
-        "Date": pd.to_datetime(dates),
-        "Alpha_Equity": eq_arr,
-        "BnH_Equity": bnh_arr,
-        "Drawdown": dd_arr
+        "일자": dates,
+        "공격형 Alpha 전략 자산(만원)": np.round(eq_arr / 10000.0, 1),
+        "단순 보유(B&H) 자산(만원)": np.round(bnh_arr / 10000.0, 1)
     })
 
     return {
@@ -955,11 +902,138 @@ def run_alpha_backtest(df_period, initial_capital=30000000):
         "curve_df": curve_df
     }
 
+def render_svg_wave_chart(df_display, tp2, tp3, tp4, stock_name, stock_code):
+    """
+    외부 차트 패키지(matplotlib 등) 없이도 모든 환경에서 한글 깨짐 없이 작동하는
+    고해상도 SVG 파동 & S값 오실레이터 벡터 차트를 생성합니다.
+    """
+    if df_display.empty:
+        return ""
+
+    closes = df_display["종가(B)"].values.astype(float)
+    ma200 = df_display["MA200"].values.astype(float)
+    s_vals = df_display["S"].values.astype(float)
+    sigs = df_display["매수신호"].values
+    dates = df_display["일자"].values
+    n = len(closes)
+
+    w, h1, h2 = 960, 260, 170
+    pad_l, pad_r, pad_t, pad_b = 65, 95, 28, 26
+
+    # Panel 1: Price + MA200 + Target Lines
+    all_p = list(closes) + list(ma200)
+    for tp in [tp2, tp3, tp4]:
+        if tp > 0:
+            all_p.append(float(tp))
+    p_min = min(all_p) * 0.96
+    p_max = max(all_p) * 1.04
+    if p_max <= p_min:
+        p_max = p_min + 1.0
+
+    def x_coord(idx):
+        if n <= 1:
+            return pad_l
+        return pad_l + (idx / float(n - 1)) * (w - pad_l - pad_r)
+
+    def y_price(val):
+        return pad_t + (1.0 - (val - p_min) / (p_max - p_min)) * (h1 - pad_t - pad_b)
+
+    close_pts = " ".join(f"{x_coord(i):.1f},{y_price(closes[i]):.1f}" for i in range(n))
+    ma_pts = " ".join(f"{x_coord(i):.1f},{y_price(ma200[i]):.1f}" for i in range(n))
+
+    grid_lines_p1 = []
+    for k in range(5):
+        gv = p_min + (p_max - p_min) * (k / 4.0)
+        gy = y_price(gv)
+        grid_lines_p1.append(
+            f'<line x1="{pad_l}" y1="{gy:.1f}" x2="{w - pad_r}" y2="{gy:.1f}" stroke="#E2E8F0" stroke-dasharray="3,3" stroke-width="1"/>'
+            f'<text x="{pad_l - 6}" y="{gy + 4:.1f}" text-anchor="end" font-size="10" fill="#64748B">{int(round(gv)):,}</text>'
+        )
+
+    tp_lines = []
+    for label, tp_val, color in [
+        ("2차(-32)", tp2, "#E53935"),
+        ("3차(-40)", tp3, "#C62828"),
+        ("4차(-55)", tp4, "#6A1B9A")
+    ]:
+        if tp_val > 0 and p_min <= tp_val <= p_max:
+            ty = y_price(tp_val)
+            tp_lines.append(
+                f'<line x1="{pad_l}" y1="{ty:.1f}" x2="{w - pad_r}" y2="{ty:.1f}" stroke="{color}" stroke-dasharray="4,4" stroke-width="1.2"/>'
+                f'<text x="{w - pad_r + 4}" y="{ty + 4:.1f}" text-anchor="start" font-size="10" font-weight="bold" fill="{color}">{label} {tp_val:,}</text>'
+            )
+
+    markers = []
+    step_filter = max(1, n // 120)
+    for i in range(0, n, step_filter):
+        sg = str(sigs[i])
+        cx, cy = x_coord(i), y_price(closes[i])
+        if ("2차 진입" in sg) or ("3차" in sg and "청산" not in sg) or ("4차" in sg):
+            markers.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="3.5" fill="#D32F2F" stroke="#FFFFFF" stroke-width="1"/>')
+        elif ("익절" in sg) or ("청산" in sg):
+            markers.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="3.5" fill="#1565C0" stroke="#FFFFFF" stroke-width="1"/>')
+
+    # Panel 2: S-Value Oscillator
+    s_min = min(-65.0, float(np.min(s_vals)) - 5.0)
+    s_max = max(25.0, float(np.max(s_vals)) + 5.0)
+
+    def y_s(sv):
+        return pad_t + (1.0 - (sv - s_min) / (s_max - s_min)) * (h2 - pad_t - pad_b)
+
+    s_pts = " ".join(f"{x_coord(i):.1f},{y_s(s_vals[i]):.1f}" for i in range(n))
+
+    s_ref_lines = []
+    for s_label, sv_ref, s_col in [
+        ("S=0 (2차익절)", 0, "#1565C0"),
+        ("S=-5 (1차익절)", -5, "#00897B"),
+        ("S=-32 (2차매수)", -32, "#E53935"),
+        ("S=-40 (3차주력)", -40, "#C62828"),
+        ("S=-55 (4차승부)", -55, "#6A1B9A")
+    ]:
+        if s_min <= sv_ref <= s_max:
+            sy = y_s(sv_ref)
+            s_ref_lines.append(
+                f'<line x1="{pad_l}" y1="{sy:.1f}" x2="{w - pad_r}" y2="{sy:.1f}" stroke="{s_col}" stroke-dasharray="3,3" stroke-width="1"/>'
+                f'<text x="{pad_l - 6}" y="{sy + 4:.1f}" text-anchor="end" font-size="10" font-weight="bold" fill="{s_col}">{sv_ref}</text>'
+                f'<text x="{w - pad_r + 4}" y="{sy + 4:.1f}" text-anchor="start" font-size="9.5" fill="{s_col}">{s_label}</text>'
+            )
+
+    date_labels = []
+    for k in range(5):
+        idx = int(round((n - 1) * (k / 4.0)))
+        dx = x_coord(idx)
+        date_labels.append(
+            f'<text x="{dx:.1f}" y="{h2 - 6}" text-anchor="middle" font-size="10" fill="#475569">{dates[idx]}</text>'
+        )
+
+    svg_html = f"""
+    <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-radius:10px; padding:12px 14px; margin-bottom:14px;">
+        <div style="font-size:0.92rem; font-weight:800; color:#1E293B; margin-bottom:6px;">
+            📈 [{stock_name} ({stock_code})] 주가 파동 · 200일선 · 지정가 타점 및 S값 오실레이터
+            <span style="font-size:0.78rem; font-weight:600; color:#64748B; margin-left:10px;">
+                (● 빨간점: 2~4차 매수 시그널 / ● 파란점: 익절·청산 시그널 / 주황 점선: 200일선)
+            </span>
+        </div>
+        <svg viewBox="0 0 {w} {h1}" style="width:100%; height:auto; display:block; border-bottom:1px solid #F1F5F9;">
+            {''.join(grid_lines_p1)}
+            {''.join(tp_lines)}
+            <polyline fill="none" stroke="#F59E0B" stroke-width="1.6" stroke-dasharray="5,3" points="{ma_pts}"/>
+            <polyline fill="none" stroke="#0F172A" stroke-width="1.8" points="{close_pts}"/>
+            {''.join(markers)}
+        </svg>
+        <div style="font-size:0.84rem; font-weight:800; color:#334155; margin:8px 0 4px 0;">
+            🧭 S값 파동 에너지 오실레이터 (현재 S값: {int(s_vals[-1])})
+        </div>
+        <svg viewBox="0 0 {w} {h2}" style="width:100%; height:auto; display:block;">
+            {''.join(s_ref_lines)}
+            <polyline fill="none" stroke="#334155" stroke-width="1.6" points="{s_pts}"/>
+            {''.join(date_labels)}
+        </svg>
+    </div>
+    """
+    return svg_html
+
 def compute_historical_rebound_stats(df_full, target_s, forward_days=30):
-    """
-    과거 전체 데이터에서 S값이 기준치 이하로 내려갔던 날 이후 forward_days 영업일 동안의
-    실제 반등 확률 및 평균 최대 수익률을 계산하여 심리적 안정의 객관적 근거를 제공합니다.
-    """
     closes = df_full["종가(B)"].values.astype(float)
     s_vals = df_full["S"].values.astype(float)
     n = len(closes)
@@ -978,12 +1052,12 @@ def compute_historical_rebound_stats(df_full, target_s, forward_days=30):
                 max_gains.append(gain_pct)
                 if gain_pct >= 3.0:
                     pos_count += 1
-            i += 5  # 동일 파동 중복 카운트 완화
+            i += 5
         else:
             i += 1
 
     if not max_gains:
-        return {"threshold": threshold, "count": 0, "win_prob": 0.0, "avg_max_gain": 0.0, "median_gain": 0.0}
+        return {"threshold": int(threshold), "count": 0, "win_prob": 0.0, "avg_max_gain": 0.0, "median_gain": 0.0}
 
     return {
         "threshold": int(threshold),
@@ -1004,7 +1078,7 @@ kosdaq_val = int(kosdaq_df["Close"].iloc[-1]) if kosdaq_df is not None and not k
 kosdaq_chg = ((kosdaq_df["Close"].iloc[-1] / kosdaq_df["Close"].iloc[-2]) - 1.0) * 100 if kosdaq_df is not None and len(kosdaq_df) >= 2 else 0.0
 
 if stock_code:
-    with st.spinner(f"[{stock_name} ({stock_code})] 4대 지표 컬러, 백테스팅 및 심리 안정 브리핑 로딩 중..."):
+    with st.spinner(f"[{stock_name} ({stock_code})] 5대 지표 컬러, 백테스팅 및 심리 안정 브리핑 로딩 중..."):
         raw_df, _ = get_naver_stock_data(stock_code, count=1500)
 
     if raw_df is not None and not raw_df.empty:
@@ -1020,7 +1094,6 @@ if stock_code:
         min_pq_val = s.get("min_pq", 0)
         curr_p = s["B1"]
 
-        # 정밀 호가단위 및 절사 오차 보정이 적용된 지정가 타점 계산
         target_prices_dict = {}
         for s_tgt in [-25, -32, -40, -55, -5, 0]:
             target_prices_dict[s_tgt] = calc_exact_s_target_price(
@@ -1113,7 +1186,7 @@ if stock_code:
         c4.metric("코스닥 (KOSDAQ)", f"{kosdaq_val:,}", f"{kosdaq_chg:+.2f}%")
 
         # ---------------------------------------------------------
-        # 9. 메인 5대 탭 구성 (차트 & 백테스팅 탭 추가)
+        # 9. 메인 5대 탭 구성
         # ---------------------------------------------------------
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📊 매수·매도 표",
@@ -1128,16 +1201,11 @@ if stock_code:
         # =========================================================
         with tab1:
             st.caption("📈 MM(파동진폭), PM(직전확정고점 대비 낙폭), LM(저점반등), S(파동에너지), RM(현파동고점 대비 낙폭) 히트맵 색상이 적용된 표입니다.")
-            display_cols = [
-                "일자", "종가(B)", "등락률(C)", "매수신호", "거래량(F)", "거래비율(G)",
-                "MM", "PM", "LM", "S", "RM",
-                "부-반등(M)", "반등(N)", "상-추세(O)", "하-추세(Q)", "조정(R)", "부-조정(S)", "MA200"
-            ]
-            df_rev = df_display[display_cols].iloc[::-1].copy()
+            df_rev = df_display.iloc[::-1].copy()
             st.dataframe(style_table(df_rev, df_full_result), use_container_width=True, height=520)
 
         # =========================================================
-        # TAB 2: 공격형 Alpha 주문 계산기 (매도 수량 비중 20/35/45% 정확히 일치)
+        # TAB 2: 공격형 Alpha 주문 계산기 (매도 수량 비중 20/35/45% 일치)
         # =========================================================
         with tab2:
             st.markdown("#### 🎯 [공격형 Alpha] 실전 매수 & 매도 주문 계산기")
@@ -1173,7 +1241,6 @@ if stock_code:
             trailing_stop_p = round_tick(max(curr_p, s["cur_peak"]) * (1.0 - 0.045), is_etf=is_current_etf)
             sell_cut = round_tick(user_avg_p * 0.85, is_etf=is_current_etf)
 
-            # 수정 완료: 1차 20%, 2차 35%(전체 보유량 대비), 3차 잔여 45% 정확히 합산 100% 일치
             qty_s1 = int(round(user_hold_qty * 0.20))
             qty_s2 = int(round(user_hold_qty * 0.35))
             qty_s3 = max(0, user_hold_qty - qty_s1 - qty_s2)
@@ -1188,7 +1255,7 @@ if stock_code:
             st.dataframe(pd.DataFrame(sell_plan), use_container_width=True, hide_index=True)
 
         # =========================================================
-        # TAB 3: 파동 차트 & 백테스팅
+        # TAB 3: 파동 차트 & 백테스팅 (외부 라이브러리 없이 100% 작동)
         # =========================================================
         with tab3:
             st.markdown(f"#### 📈 [{stock_name}] 파동 에너지 차트 & 공격형 Alpha 백테스팅 (최근 {years_back}년)")
@@ -1219,80 +1286,26 @@ if stock_code:
                 open_status_str = f"{bt_result['open_shares']:,}주 (평단 {bt_result['open_avg_price']:,}원)" if bt_result["open_shares"] > 0 else "100% 현금 관망 중"
                 bk5.metric("시뮬레이션 현재 포지션", open_status_str, f"현금 {bt_result['open_cash']:,}원")
 
-            # 3-패널 차트: (1) 주가 + MA200 + 매수/익절 타점, (2) S값 오실레이터, (3) 백테스트 자산 증식 곡선
-            fig, (ax1, ax2, ax3) = plt.subplots(
-                3, 1, figsize=(13, 9.5), sharex=True,
-                gridspec_kw={"height_ratios": [2.2, 1.2, 1.3]}
-            )
-            plot_dates = pd.to_datetime(df_display["일자"])
-            plot_closes = df_display["종가(B)"].values
-            plot_ma200 = df_display["MA200"].values
-            plot_s = df_display["S"].values
-            plot_sigs = df_display["매수신호"].values
+            # 브라우저 네이티브 SVG 벡터 차트 렌더링 (한글 폰트 깨짐 및 패키지 에러 원천 차단)
+            svg_chart_html = render_svg_wave_chart(df_display, tp2, tp3, tp4, stock_name, stock_code)
+            st.markdown(svg_chart_html, unsafe_allow_html=True)
 
-            # Panel 1: Price, MA200, Target Lines, Buy/Sell Signals
-            ax1.plot(plot_dates, plot_closes, label="종가(Close)", color="#1E293B", linewidth=1.6)
-            ax1.plot(plot_dates, plot_ma200, label="200일 이동평균선(MA200)", color="#F59E0B", linestyle="--", linewidth=1.4)
-            if tp2 > 0:
-                ax1.axhline(tp2, color="#E53935", linestyle=":", alpha=0.6, linewidth=1.0, label=f"2차(-32): {tp2:,}원")
-            if tp3 > 0:
-                ax1.axhline(tp3, color="#C62828", linestyle=":", alpha=0.75, linewidth=1.1, label=f"3차(-40): {tp3:,}원")
-            if tp4 > 0:
-                ax1.axhline(tp4, color="#6A1B9A", linestyle=":", alpha=0.85, linewidth=1.2, label=f"4차(-55): {tp4:,}원")
-
-            buy_mask = np.array([("2차 진입" in x or "3차" in x and "청산" not in x or "4차" in x) for x in plot_sigs])
-            sell_mask = np.array([("익절" in x or "청산" in x) for x in plot_sigs])
-
-            if np.any(buy_mask):
-                ax1.scatter(plot_dates[buy_mask], plot_closes[buy_mask], color="#D32F2F", marker="^", s=45, zorder=5, label="매수 타점(2~4차)")
-            if np.any(sell_mask):
-                ax1.scatter(plot_dates[sell_mask], plot_closes[sell_mask], color="#1565C0", marker="v", s=45, zorder=5, label="익절/청산 타점")
-
-            ax1.set_title(f"{stock_name} ({stock_code}) 주가 파동 · 지정가 타점 · 시그널 마커", fontsize=11, fontweight="bold")
-            ax1.set_ylabel("주가 (원)")
-            ax1.legend(loc="upper left", fontsize=8, ncol=3)
-            ax1.grid(True, linestyle="--", alpha=0.35)
-
-            # Panel 2: S-Value Oscillator
-            ax2.plot(plot_dates, plot_s, color="#334155", linewidth=1.2, label="S값 (파동 에너지)")
-            ax2.axhline(0, color="#1565C0", linestyle="-", linewidth=1.0, alpha=0.8, label="2차 집중익절 (S=0)")
-            ax2.axhline(-5, color="#00897B", linestyle="--", linewidth=0.9, alpha=0.7, label="1차 선제익절 (S=-5)")
-            ax2.axhline(-32, color="#E53935", linestyle="--", linewidth=0.9, alpha=0.7, label="2차 매수 (S=-32)")
-            ax2.axhline(-40, color="#C62828", linestyle="--", linewidth=1.0, alpha=0.8, label="3차 주력매수 (S=-40)")
-            ax2.axhline(-55, color="#6A1B9A", linestyle="-", linewidth=1.1, alpha=0.9, label="4차 승부수 (S=-55)")
-            ax2.fill_between(plot_dates, plot_s, -32, where=(plot_s <= -32), color="#FFCDD2", alpha=0.45)
-            ax2.fill_between(plot_dates, plot_s, 0, where=(plot_s >= 0), color="#BBDEFB", alpha=0.45)
-            ax2.set_title("S값 파동 오실레이터 (과매도 매수권 vs 과열 익절권)", fontsize=10, fontweight="bold")
-            ax2.set_ylabel("S값")
-            ax2.legend(loc="upper left", fontsize=8, ncol=3)
-            ax2.grid(True, linestyle="--", alpha=0.35)
-
-            # Panel 3: Backtest Equity Comparison
             if bt_result:
-                cdf = bt_result["curve_df"]
-                ax3.plot(cdf["Date"], cdf["Alpha_Equity"] / 10000.0, color="#D32F2F", linewidth=1.8, label="공격형 Alpha 전략 자산(만원)")
-                ax3.plot(cdf["Date"], cdf["BnH_Equity"] / 10000.0, color="#64748B", linestyle="--", linewidth=1.3, label="단순 보유(Buy & Hold) 자산(만원)")
-                ax3.set_title("공격형 Alpha 전략 vs 단순 보유 자산 증식 곡선 (단위: 만원)", fontsize=10, fontweight="bold")
-                ax3.set_ylabel("자산 (만원)")
-                ax3.legend(loc="upper left", fontsize=8)
-                ax3.grid(True, linestyle="--", alpha=0.35)
+                st.markdown("##### 💰 공격형 Alpha 전략 vs 단순 보유(Buy & Hold) 자산 증식 곡선 (단위: 만원)")
+                chart_df = bt_result["curve_df"].set_index("일자")
+                st.line_chart(chart_df, height=260)
 
-            ax3.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
-            plt.tight_layout()
-            st.pyplot(fig)
-            plt.close(fig)
-
-            if bt_result and not bt_result["trades_df"].empty:
-                with st.expander(f"📋 백테스팅 상세 매매 기록 보기 (총 {len(bt_result['trades_df'])}건)", expanded=False):
-                    tdf = bt_result["trades_df"].iloc[::-1].copy()
-                    st.dataframe(
-                        tdf.style.format({"단가": "{:,}원", "수량": "{:,}주", "금액": "{:,}원", "보유수량": "{:,}주", "평단가": "{:,}원"}),
-                        use_container_width=True,
-                        hide_index=True
-                    )
+                if not bt_result["trades_df"].empty:
+                    with st.expander(f"📋 백테스팅 상세 매매 기록 보기 (총 {len(bt_result['trades_df'])}건)", expanded=False):
+                        tdf = bt_result["trades_df"].iloc[::-1].copy()
+                        st.dataframe(
+                            tdf.style.format({"단가": "{:,}원", "수량": "{:,}주", "금액": "{:,}원", "보유수량": "{:,}주", "평단가": "{:,}원"}),
+                            use_container_width=True,
+                            hide_index=True
+                        )
 
         # =========================================================
-        # TAB 4: 포트폴리오 & 롱-숏 진단 (신규 종목 누락 버그 및 기준 S값 고정 수정)
+        # TAB 4: 포트폴리오 & 롱-숏 진단
         # =========================================================
         with tab4:
             st.markdown("##### 💼 실전 계좌 잔고 & 공격형 롱-숏 헤지 진단")
@@ -1367,7 +1380,6 @@ if stock_code:
                     hide_index=True
                 )
 
-            # 롱-숏 헤지 진단 시 상단 검색 종목이 무엇이든 기준 롱 종목(233740)의 고유 S값을 조회하여 사용
             if stock_code == "233740":
                 lev_s_val = current_s_val
             else:
@@ -1415,7 +1427,6 @@ if stock_code:
             else:
                 st.info("현재 KODEX 코스닥150레버리지(233740) 보유 수량이 0주입니다. 보유 수량 입력 시 롱-숏 헤지 비율 진단이 자동 활성화됩니다.")
 
-            # 체결 일지 입력 & 보유 종목 직접 편집/백업
             col_edit1, col_edit2 = st.columns(2)
             with col_edit1:
                 with st.expander("📝 [체결 일지 입력 & 잔고 자동 연동 (신규 종목 자동 추가)]", expanded=False):
@@ -1454,7 +1465,6 @@ if stock_code:
                                         target_itm["qty"] = new_tot_q
                                         target_itm["confirmed_name"] = resolved_name
                                     else:
-                                        # 수정 완료: 기존 보유 목록에 없던 신규 종목 매수 시 자동 추가!
                                         next_id = max([int(x.get("id", 0)) for x in acc["items"]] + [0]) + 1
                                         acc["items"].append({
                                             "id": next_id,
@@ -1533,12 +1543,11 @@ if stock_code:
                 )
 
         # =========================================================
-        # TAB 5: 마감 브리핑 & 심리 안정 마인드 컨트롤 (정밀 진단 + 심리 처방 고도화)
+        # TAB 5: 마감 브리핑 & 심리 안정 마인드 컨트롤
         # =========================================================
         with tab5:
             st.markdown(f"#### 📢 [{s['date']}] {stock_name} ({stock_code}) 정밀 마감 브리핑 & 마인드 컨트롤")
 
-            # 1) 객관적 데이터 계산
             ma200_gap = ((curr_p / s["MA200"]) - 1.0) * 100.0 if s["MA200"] > 0 else 0.0
             ma20_gap = ((curr_p / s["MA20"]) - 1.0) * 100.0 if s["MA20"] > 0 else 0.0
             s_diff = current_s_val - s["prev_s"]
@@ -1548,7 +1557,6 @@ if stock_code:
             my_avg_now = my_port_item["avg_price"] if my_port_item else 0
             my_ret_now = ((curr_p / my_avg_now) - 1.0) * 100.0 if (my_qty_now > 0 and my_avg_now > 0) else 0.0
 
-            # 2) 상황별 심리 안정 코칭 메시지 생성
             if current_s_val <= -40:
                 mind_title = "🧘 [심리 안정 처방 — 과매도 공포 구간] 지금 느끼는 불안감은 파동 바닥권의 가장 정확한 역발상 신호입니다"
                 mind_body = (
@@ -1595,7 +1603,6 @@ if stock_code:
             </div>
             """, unsafe_allow_html=True)
 
-            # 3) 정밀 팩트 브리핑 & 지지/저항 매트릭스
             b_left, b_right = st.columns(2)
             with b_left:
                 st.markdown(f"""
@@ -1629,7 +1636,6 @@ if stock_code:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # 4) 내일 장 3대 시나리오별 기계적 대응 프로토콜 (If-Then)
             st.markdown("##### 🗺️ 3. 내일 장 시나리오별 기계적 대응 프로토콜 (장중 감정 배제용 If-Then 가이드)")
             sc1, sc2, sc3 = st.columns(3)
 
@@ -1676,7 +1682,6 @@ if stock_code:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # 5) 장 마감 후 마인드셋 점검 & 복사용 요약 브리핑
             st.markdown("<div style='margin-top:14px;'></div>", unsafe_allow_html=True)
             with st.expander("📋 [메모장/카톡 보관용] 오늘의 마감 브리핑 & 내일 주문표 텍스트 복사하기", expanded=False):
                 summary_text = (
