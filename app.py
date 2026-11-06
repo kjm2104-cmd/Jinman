@@ -67,7 +67,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("🔥 스마트 파동 매매 Pro Max (공격형 Alpha: 바닥비중 집중 & 트레일링 극대화)")
+st.subheader("🔥 스마트 파동 매매 Pro Max (지표 컬러 & 공격형 Alpha 복원판)")
 
 # ---------------------------------------------------------
 # 2. 포트폴리오 & 즐겨찾기 영구 저장 관리
@@ -276,9 +276,16 @@ def trunc_int(val):
     return int(np.trunc(val))
 
 # ---------------------------------------------------------
-# 5. 웹 표 스타일러
+# 5. 웹 표 스타일러 (MM, PM, LM, S, RM 색상 완벽 복원)
 # ---------------------------------------------------------
 def style_table(df_target, df_full):
+    cols_grad = ['MM', 'PM', 'LM', 'RM', 'S']
+    col_bounds = {}
+    for c in cols_grad:
+        if c in df_full.columns:
+            vals = pd.to_numeric(df_full[c], errors='coerce')
+            col_bounds[c] = (vals.min(), vals.max())
+
     def color_styler(row_idx, row):
         styles = ['text-align: center;'] * len(row)
         chg_str = str(row.get('등락률(C)', '0%')).strip()
@@ -286,11 +293,73 @@ def style_table(df_target, df_full):
         is_down = '-' in chg_str
 
         for idx, col_name in enumerate(row.index):
+            val = row[col_name]
             base_style = 'text-align: center;'
+
+            # 1) 종가 및 등락률
             if col_name in ['종가(B)', '등락률(C)']:
-                styles[idx] = f'{base_style} color: #D32F2F; font-weight: bold;' if is_up else (f'{base_style} color: #1976D2; font-weight: bold;' if is_down else f'{base_style} color: #111;')
+                if is_up:
+                    styles[idx] = f'{base_style} color: #D32F2F; font-weight: bold;'
+                elif is_down:
+                    styles[idx] = f'{base_style} color: #1976D2; font-weight: bold;'
+                else:
+                    styles[idx] = f'{base_style} color: #111111;'
+
+            # 2) 거래량 (전일비 증감 색상)
+            elif col_name == '거래량(F)':
+                try:
+                    curr_vol = float(val)
+                    row_pos = row.name
+                    prev_vol = float(df_full.loc[row_pos - 1, '거래량(F)']) if (row_pos - 1) in df_full.index else curr_vol
+                    vol_diff_ratio = (curr_vol - prev_vol) / prev_vol if prev_vol > 0 else 0.0
+                    if vol_diff_ratio >= 0:
+                        ratio = min(1.0, vol_diff_ratio / 1.0)
+                        r = 255; g = int(240 - ratio * 180); b = int(240 - ratio * 180)
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.3 else "#222222"}; font-weight: bold;'
+                    else:
+                        ratio = min(1.0, abs(vol_diff_ratio) / 0.5)
+                        r = int(240 - ratio * 180); g = int(240 - ratio * 180); b = 255
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: {"#0D47A1" if ratio > 0.3 else "#222222"}; font-weight: bold;'
+                except Exception:
+                    pass
+
+            # 3) S값 (양수 레드 / 음수 블루 강력 대비)
+            elif col_name == 'S':
+                try:
+                    s_num = float(val)
+                    if s_num > 0:
+                        ratio = min(1.0, s_num / 50.0)
+                        r = 255; g = int(230 - ratio * 150); b = int(230 - ratio * 150)
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: #B71C1C; font-weight: 900; border-radius: 4px;'
+                    elif s_num < 0:
+                        ratio = min(1.0, abs(s_num) / 60.0)
+                        r = int(230 - ratio * 150); g = int(230 - ratio * 150); b = 255
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: 900; border-radius: 4px;'
+                    else:
+                        styles[idx] = f'{base_style} background-color: #E0E0E0; color: #333333; font-weight: bold;'
+                except Exception:
+                    pass
+
+            # 4) MM, PM, LM, RM (원본 히트맵 그라데이션 복원)
+            elif col_name in ['MM', 'PM', 'LM', 'RM']:
+                try:
+                    v = float(val)
+                    vmin, vmax = col_bounds.get(col_name, (0, 1))
+                    ratio = 0.0 if vmax == vmin else max(0.0, min(1.0, (v - vmin) / (vmax - vmin)))
+                    
+                    if col_name == 'PM' and v < 0:
+                        ratio_neg = min(1.0, abs(v) / 50.0)
+                        r = int(240 - ratio_neg * 150); g = int(240 - ratio_neg * 150); b = 255
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: #0D47A1; font-weight: bold;'
+                    else:
+                        r = 255; g = int(245 - ratio * 170); b = int(245 - ratio * 170)
+                        styles[idx] = f'{base_style} background-color: rgb({r}, {g}, {b}); color: {"#B71C1C" if ratio > 0.5 else "#222222"}; font-weight: {"bold" if ratio > 0.4 else "normal"};'
+                except Exception:
+                    pass
+
+            # 5) 매수·매도 신호 배지
             elif col_name == '매수신호':
-                val_str = str(row[col_name])
+                val_str = str(val)
                 if '4차' in val_str:
                     styles[idx] = f'{base_style} background-color: #6A1B9A; color: #FFFFFF; font-weight: 900;'
                 elif '3차' in val_str:
@@ -298,7 +367,7 @@ def style_table(df_target, df_full):
                 elif '2차' in val_str:
                     styles[idx] = f'{base_style} background-color: #E53935; color: #FFFFFF; font-weight: 900;'
                 elif '1차' in val_str:
-                    styles[idx] = f'{base_style} color: #9E9E9E; font-weight: bold;'
+                    styles[idx] = f'{base_style} color: #757575; font-weight: bold;'
                 elif '청산' in val_str:
                     styles[idx] = f'{base_style} background-color: #1A237E; color: #FFFFFF; font-weight: 900;'
                 elif '집중익절' in val_str:
@@ -323,7 +392,7 @@ def style_table(df_target, df_full):
     return df_target.style.apply(lambda row: color_styler(row.name, row), axis=1).format(format_dict, na_rep="-")
 
 # ---------------------------------------------------------
-# 6. 지표 계산 및 공격형 알파 로직
+# 6. 지표 계산 및 공격형 Alpha 로직
 # ---------------------------------------------------------
 @st.cache_data(ttl=300, show_spinner=False)
 def calculate_indicator_sheet(df_raw):
@@ -386,9 +455,7 @@ def calculate_indicator_sheet(df_raw):
         rm = trunc_int((p / active_high - 1.0) * 100.0) if active_high > 0 else 0
         prev_s = s_list[-1] if len(s_list) > 0 else s_val
 
-        # =========================================================
         # 🏷️ [공격형 Alpha] 1차 관망, 2차 5%, 3차 25%, 4차 40%
-        # =========================================================
         if active_low > 0 and s_val >= 0:
             if s_val < prev_s or (is_bear_candle and g_val >= 1.5):
                 sig = "3차 청산(상투)"
@@ -541,7 +608,7 @@ kosdaq_val = int(kosdaq_df['Close'].iloc[-1]) if kosdaq_df is not None and not k
 kosdaq_chg = ((kosdaq_df['Close'].iloc[-1] / kosdaq_df['Close'].iloc[-2]) - 1.0) * 100 if kosdaq_df is not None and len(kosdaq_df) >= 2 else 0.0
 
 if stock_code:
-    with st.spinner(f"[{stock_name} ({stock_code})] 4대 지표 공격형 Alpha를 계산 중입니다..."):
+    with st.spinner(f"[{stock_name} ({stock_code})] 4대 지표 컬러 및 Alpha 전략 로딩 중..."):
         raw_df, _ = get_naver_stock_data(stock_code, count=1500)
 
     if raw_df is not None and not raw_df.empty:
@@ -655,7 +722,7 @@ if stock_code:
         ])
 
         with tab1:
-            st.caption("📈 공격형 Alpha (1차 관망, 4차 40% 승부수, 트레일링 룸 확대) 데이터 표입니다.")
+            st.caption("📈 MM, PM, LM, S, RM 히트맵 색상이 완벽히 복원된 데이터 표입니다.")
             df_rev = df_display.iloc[::-1].copy()
             st.dataframe(style_table(df_rev, df_full_result), use_container_width=True, height=520)
 
@@ -677,7 +744,7 @@ if stock_code:
 
             # 2. 공격형 매도 주문표
             st.markdown("---")
-            st.markdown("##### 📤 2. 공격형 분할 익절 & 트레일링 룸 확대 플랜 (수익 극대화)")
+            st.markdown("##### 📤 2. 공격형 분할 익절 & 트레일링 룸 확대 플랜")
 
             user_avg_p = my_port_item['avg_price'] if my_port_item else curr_p
             user_hold_qty = my_port_item['qty'] if my_port_item else int((total_seed * 0.7) // curr_p) if curr_p > 0 else 1000
@@ -686,9 +753,9 @@ if stock_code:
             sell_p2 = r10(user_avg_p * 1.10)
             sell_cut = r10(user_avg_p * 0.85)
 
-            qty_s1 = int(round(user_hold_qty * 0.20)) # 1차는 20%만 털기
-            qty_s2 = int(round((user_hold_qty - qty_s1) * 0.45)) # 2차 집중익절
-            qty_s3 = max(0, user_hold_qty - qty_s1 - qty_s2) # 잔여 40~45%는 끝까지 트레일링
+            qty_s1 = int(round(user_hold_qty * 0.20))
+            qty_s2 = int(round((user_hold_qty - qty_s1) * 0.45))
+            qty_s3 = max(0, user_hold_qty - qty_s1 - qty_s2)
 
             sell_plan = [
                 {"익절 단계": "🟢 1차 선제익절", "트리거 조건": "S ≥ -5 (평단+5% 이상)", "목표단가": f"{sell_p1:,}원 이상", "수량": f"{qty_s1:,}주 (20%)", "의도": "소량만 털어 예비 현금 확보, 80%는 랠리에 남겨둠"},
