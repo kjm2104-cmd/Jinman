@@ -70,7 +70,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.subheader("📈 스마트 파동 매매 시스템 Pro Max (4대 지표·거래량 통합)")
+st.subheader("📈 스마트 파동 매매 시스템 Pro Max")
 
 # ---------------------------------------------------------
 # 2. 포트폴리오 & 즐겨찾기 영구 저장 관리 (portfolio_data.json)
@@ -129,7 +129,7 @@ if 'account_data' not in st.session_state:
     st.session_state.account_data = load_saved_portfolio()
 
 # ---------------------------------------------------------
-# 3. 네이버 금융 시세 & 종목명 크롤링 (외부 API 불필요)
+# 3. 네이버 금융 시세 & 종목명 크롤링
 # ---------------------------------------------------------
 @st.cache_data(ttl=300, show_spinner=False)
 def get_naver_stock_data(code, count=1500):
@@ -173,7 +173,6 @@ def get_naver_stock_data(code, count=1500):
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_naver_stock_name(code):
-    """외부 API 없이 네이버 금융 웹페이지 타이틀에서 종목명 자동 추출"""
     try:
         url = f"https://finance.naver.com/item/main.naver?code={code}"
         res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
@@ -187,49 +186,18 @@ def fetch_naver_stock_name(code):
         pass
     return f"종목({code})"
 
-# 주요 종목 빠른 매핑 사전
 name_to_code = {
-    "코스피지수": "KOSPI",
-    "코스닥지수": "KOSDAQ",
-    "KODEX 코스닥150레버리지": "233740",
-    "코스닥150레버리지": "233740",
-    "KODEX 코스닥150선물인버스": "251340",
-    "코스닥150선물인버스": "251340",
-    "TIGER 미국나스닥100타겟데일리커버드콜": "486290",
-    "KODEX 레버리지": "122630",
-    "KODEX 200선물인버스2X": "252670",
-    "곱버스": "252670",
-    "KODEX 200": "069500",
-    "TIGER 미국나스닥100": "133690",
-    "TIGER 미국S&P500": "360750",
-    "삼성전자": "005930",
-    "SK하이닉스": "000660",
-    "LG에너지솔루션": "373220",
-    "현대차": "005380",
-    "기아": "000270",
-    "셀트리온": "068270",
-    "POSCO홀딩스": "005490",
-    "NAVER": "035420",
-    "카카오": "035720",
-    "알테오젠": "196170",
-    "에코프로비엠": "247540",
-    "에코프로": "086520",
-    "HLB": "028300",
-    "리가켐바이오": "141080",
-    "피엔티": "137400"
+    "코스피지수": "KOSPI", "코스닥지수": "KOSDAQ", "KODEX 코스닥150레버리지": "233740",
+    "코스닥150레버리지": "233740", "KODEX 코스닥150선물인버스": "251340", "코스닥150선물인버스": "251340",
+    "TIGER 미국나스닥100타겟데일리커버드콜": "486290", "KODEX 레버리지": "122630", "KODEX 200선물인버스2X": "252670",
+    "곱버스": "252670", "KODEX 200": "069500", "삼성전자": "005930", "SK하이닉스": "000660"
 }
-
 code_to_name = {v: k for k, v in name_to_code.items()}
-code_to_name["233740"] = "KODEX 코스닥150레버리지"
-code_to_name["251340"] = "KODEX 코스닥150선물인버스"
-code_to_name["252670"] = "KODEX 200선물인버스2X"
-code_to_name["486290"] = "TIGER 미국나스닥100타겟데일리커버드콜"
 
 def resolve_code_and_name(user_str):
     clean_str = str(user_str).strip()
     if not clean_str:
         return "233740", "KODEX 코스닥150레버리지"
-    
     if clean_str in name_to_code:
         code = name_to_code[clean_str]
         return code, code_to_name.get(code, clean_str)
@@ -238,8 +206,7 @@ def resolve_code_and_name(user_str):
         if code in code_to_name:
             return code, code_to_name[code]
         else:
-            fetched_name = fetch_naver_stock_name(code)
-            return code, fetched_name
+            return code, fetch_naver_stock_name(code)
     else:
         for k, v in name_to_code.items():
             if clean_str.lower() in k.lower():
@@ -247,7 +214,7 @@ def resolve_code_and_name(user_str):
         return clean_str, clean_str
 
 # ---------------------------------------------------------
-# 4. 상단 종목 빠른 선택 및 즐겨찾기 자유 관리 바
+# 4. 상단 종목 검색 및 즐겨찾기
 # ---------------------------------------------------------
 acc_favs = st.session_state.account_data.get("favorites", [])
 if 'current_target_query' not in st.session_state:
@@ -256,19 +223,11 @@ if 'current_target_query' not in st.session_state:
 with st.form(key="search_form"):
     col_in1, col_in2, col_in3, col_in4 = st.columns([1.6, 1.4, 0.9, 0.7])
     with col_in1:
-        user_input = st.text_input(
-            "🔍 직접 입력 (종목명 또는 6자리 코드)",
-            value=st.session_state.current_target_query,
-            placeholder="예: 233740, 삼성전자, 피엔티"
-        ).strip()
+        user_input = st.text_input("🔍 직접 입력", value=st.session_state.current_target_query, placeholder="예: 233740, 삼성전자").strip()
     with col_in2:
-        quick_pick = st.selectbox(
-            "⭐ 내 즐겨찾기 종목 바로 선택",
-            options=["직접 입력 사용"] + acc_favs,
-            index=0
-        )
+        quick_pick = st.selectbox("⭐ 즐겨찾기 선택", options=["직접 입력 사용"] + acc_favs, index=0)
     with col_in3:
-        years_back = st.selectbox("📅 표시 기간", options=[1, 2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
+        years_back = st.selectbox("📅 기간", options=[1, 2, 3, 5], index=1, format_func=lambda x: f"최근 {x}년")
     with col_in4:
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
         submit_search = st.form_submit_button("🔍 조회", use_container_width=True)
@@ -283,7 +242,6 @@ if submit_search:
 stock_code, stock_name = resolve_code_and_name(st.session_state.current_target_query)
 current_fav_label = f"{stock_name} ({stock_code})"
 
-# 원클릭 별표(☆/★) 버튼 & 오른쪽 목록 관리창(⚙️)
 fav_col1, fav_col2 = st.columns([1.3, 2.7])
 with fav_col1:
     if current_fav_label in acc_favs:
@@ -293,24 +251,19 @@ with fav_col1:
             save_current_portfolio(st.session_state.account_data)
             st.rerun()
     else:
-        if st.button(f"☆ 현재 종목 즐겨찾기 추가 [{stock_name}]", use_container_width=True):
+        if st.button(f"☆ 즐겨찾기 추가 [{stock_name}]", use_container_width=True):
             acc_favs.append(current_fav_label)
             st.session_state.account_data["favorites"] = acc_favs
             save_current_portfolio(st.session_state.account_data)
             st.rerun()
 
 with fav_col2:
-    with st.expander("⚙️ 즐겨찾기 목록 직접 추가 / 순서·삭제 관리"):
+    with st.expander("⚙️ 즐겨찾기 추가 / 삭제 관리"):
         m_col1, m_col2 = st.columns([3, 1])
         with m_col1:
-            new_fav_str = st.text_input(
-                "새로 등록할 종목명 또는 6자리 코드 입력",
-                placeholder="예: 005380, 현대차, 알테오젠",
-                key="new_fav_input",
-                label_visibility="collapsed"
-            )
+            new_fav_str = st.text_input("새 종목명/코드", placeholder="예: 005380, 현대차", key="new_fav_input", label_visibility="collapsed")
         with m_col2:
-            if st.button("➕ 목록에 추가", use_container_width=True):
+            if st.button("➕ 추가", use_container_width=True):
                 if new_fav_str.strip():
                     f_code, f_name = resolve_code_and_name(new_fav_str.strip())
                     new_entry = f"{f_name} ({f_code})"
@@ -318,19 +271,7 @@ with fav_col2:
                         acc_favs.append(new_entry)
                         st.session_state.account_data["favorites"] = acc_favs
                         save_current_portfolio(st.session_state.account_data)
-                        st.success(f"✅ '{new_entry}' 추가 완료!")
                         st.rerun()
-
-        updated_favs = st.multiselect(
-            "현재 등록된 즐겨찾기 (X를 눌러 삭제 후 아래 저장 클릭)",
-            options=acc_favs,
-            default=acc_favs
-        )
-        if updated_favs != acc_favs:
-            if st.button("💾 변경된 즐겨찾기 목록 저장", use_container_width=True):
-                st.session_state.account_data["favorites"] = updated_favs
-                save_current_portfolio(st.session_state.account_data)
-                st.rerun()
 
 def r10(val):
     if val <= 0:
@@ -343,7 +284,7 @@ def trunc_int(val):
     return int(np.trunc(val))
 
 # ---------------------------------------------------------
-# 5. 웹 표 스타일러 & 4대 지표(MM,PM,LM,S)+거래량(G) 결합 수식 엔진
+# 5. 웹 표 스타일러 (색상 혼동 완전 차단 & 슬림 태그 적용)
 # ---------------------------------------------------------
 def style_table(df_target, df_full):
     cols_grad = ['MM', 'PM', 'LM', 'RM', 'S']
@@ -423,18 +364,22 @@ def style_table(df_target, df_full):
 
             elif col_name == '매수신호':
                 val_str = str(val)
-                if '4차' in val_str or '강력' in val_str:
+                # 매수 계열: 주황/빨강/보라
+                if '4차' in val_str:
                     styles[idx] = f'{base_style} background-color: #7B1FA2; color: #FFFFFF; font-weight: 900;'
-                elif '3차' in val_str or '2차' in val_str or '진입' in val_str:
-                    styles[idx] = f'{base_style} background-color: #B71C1C; color: #FFFFFF; font-weight: 900;'
-                elif '1차' in val_str or '신호' in val_str:
+                elif '3차' in val_str:
+                    styles[idx] = f'{base_style} background-color: #C62828; color: #FFFFFF; font-weight: 900;'
+                elif '2차' in val_str:
+                    styles[idx] = f'{base_style} background-color: #E53935; color: #FFFFFF; font-weight: 900;'
+                elif '1차' in val_str and '신호' in val_str:
                     styles[idx] = f'{base_style} background-color: #FF8F00; color: #FFFFFF; font-weight: 900;'
-                elif '전량청산' in val_str or '상투' in val_str:
-                    styles[idx] = f'{base_style} background-color: #0D47A1; color: #FFFFFF; font-weight: 900;'
-                elif '집중익절' in val_str or '매도' in val_str:
-                    styles[idx] = f'{base_style} background-color: #1976D2; color: #FFFFFF; font-weight: 900;'
+                # 매도 계열: 에메랄드 그린 / 코발트 블루 / 딥 네이비 (완전 차별화)
+                elif '청산' in val_str:
+                    styles[idx] = f'{base_style} background-color: #1A237E; color: #FFFFFF; font-weight: 900;' # 딥 네이비
+                elif '집중익절' in val_str:
+                    styles[idx] = f'{base_style} background-color: #1565C0; color: #FFFFFF; font-weight: 900;' # 블루
                 elif '선제익절' in val_str:
-                    styles[idx] = f'{base_style} background-color: #0288D1; color: #FFFFFF; font-weight: 800;'
+                    styles[idx] = f'{base_style} background-color: #00897B; color: #FFFFFF; font-weight: 900;' # 에메랄드 틸
                 elif val_str == '관망':
                     styles[idx] = f'{base_style} color: #2E7D32; font-weight: bold;'
         return styles
@@ -515,38 +460,34 @@ def calculate_indicator_sheet(df_raw):
         prev_s = s_list[-1] if len(s_list) > 0 else s_val
 
         # =========================================================
-        # 🌟 4대 지표(MM, PM, LM, S) + 거래량(G) 통합 매수·매도 판정 엔진
+        # 🏷️ 슬림화된 4대 지표 + 거래량(G) 결합 라벨
         # =========================================================
         if active_low > 0 and s_val >= 0:
-            # 1) 과열권(S>=0, LM>=MM) 도달 시: 모멘텀 꺾임 또는 대량거래 음봉(상투) 체크
             if s_val < prev_s or (is_bear_candle and g_val >= 1.5):
-                sig = "3차 전량청산(꺾임/상투)"
+                sig = "3차 청산(상투)" # 슬림화
             elif is_bear_candle:
-                sig = "3차 전량청산(음봉꺾임)"
+                sig = "3차 청산(음봉)" # 슬림화
             else:
-                sig = "2차 집중익절(S≥0)"
+                sig = "2차 집중익절" # 슬림화
         elif active_low > 0 and (s_val >= -5 or (mm > 0 and lm >= mm * 0.85)):
-            # 2) 상승 에너지 85% 이상 회복 시 선제 분할 익절
-            sig = "1차 선제익절(LM근접)"
+            sig = "1차 선제익절" # 슬림화
         elif s_val <= -55:
-            # 3) 4차 바닥 승부수 + 거래량 시그널(G>=1.5 투매손바뀜 or G<=0.7 바닥다지기) 결합
             if g_val >= 1.5:
-                sig = "4차 강력진입(투매폭발)"
+                sig = "4차 진입(폭발)" # 슬림화
             elif g_val <= 0.7:
-                sig = "4차 강력진입(바닥다지기)"
+                sig = "4차 진입(소강)" # 슬림화
             else:
-                sig = "4차 강력진입구간"
+                sig = "4차 강력진입"
         elif s_val <= -40:
-            # 4) 3차 집중 진입 + PM(고점 대비 낙폭 -15% 이하) 결합 확인
             if pm <= -15:
-                sig = "3차 집중진입(낙폭확인)"
+                sig = "3차 진입(PM)" # 슬림화
             else:
-                sig = "3차 진입구간"
+                sig = "3차 진입"
         elif s_val <= -32:
             if pm <= -10:
-                sig = "2차 진입(할인확인)"
+                sig = "2차 진입(할인)" # 슬림화
             else:
-                sig = "2차 진입구간"
+                sig = "2차 진입"
         elif s_val <= -25:
             sig = "1차 신호"
         else:
@@ -680,7 +621,6 @@ def calculate_indicator_sheet(df_raw):
 def rgb_to_hex(r, g, b):
     return f"{max(0, min(255, int(r))):02X}{max(0, min(255, int(g))):02X}{max(0, min(255, int(b))):02X}"
 
-# 캐싱 적용으로 불필요한 엑셀 재생성 렉 완벽 방지
 @st.cache_data(ttl=300, show_spinner=False)
 def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full_result, reverse_order=True):
     wb = openpyxl.Workbook()
@@ -698,12 +638,13 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full
     fill_yellow = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
     fill_blue_head = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
 
+    # 엑셀 매수·매도 구분 채우기 색상
     fill_sig_purple = PatternFill(start_color="7B1FA2", end_color="7B1FA2", fill_type="solid")
-    fill_sig_red = PatternFill(start_color="D32F2F", end_color="D32F2F", fill_type="solid")
+    fill_sig_red = PatternFill(start_color="C62828", end_color="C62828", fill_type="solid")
     fill_sig_orange = PatternFill(start_color="FF8F00", end_color="FF8F00", fill_type="solid")
-    fill_sig_navy = PatternFill(start_color="0D47A1", end_color="0D47A1", fill_type="solid")
-    fill_sig_blue = PatternFill(start_color="1976D2", end_color="1976D2", fill_type="solid")
-    fill_sig_sky = PatternFill(start_color="0288D1", end_color="0288D1", fill_type="solid")
+    fill_sig_navy = PatternFill(start_color="1A237E", end_color="1A237E", fill_type="solid")
+    fill_sig_blue = PatternFill(start_color="1565C0", end_color="1565C0", fill_type="solid")
+    fill_sig_emerald = PatternFill(start_color="00897B", end_color="00897B", fill_type="solid")
     fill_sig_green = PatternFill(start_color="E8F5E9", end_color="E8F5E9", fill_type="solid")
 
     align_center = Alignment(horizontal="center", vertical="center")
@@ -848,23 +789,23 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full
         c_d.alignment = align_center
         c_d.border = thin_border
 
-        if "4차" in sig_val or "강력" in sig_val:
+        if "4차" in sig_val:
             c_d.fill = fill_sig_purple
             c_d.font = font_white_bold
-        elif "3차" in sig_val or "2차" in sig_val or "진입" in sig_val:
+        elif "3차" in sig_val or "2차" in sig_val:
             c_d.fill = fill_sig_red
             c_d.font = font_white_bold
-        elif "1차" in sig_val or "신호" in sig_val:
+        elif "1차" in sig_val and "신호" in sig_val:
             c_d.fill = fill_sig_orange
             c_d.font = font_white_bold
-        elif "전량청산" in sig_val:
+        elif "청산" in sig_val:
             c_d.fill = fill_sig_navy
             c_d.font = font_white_bold
-        elif "집중익절" in sig_val or "매도" in sig_val:
+        elif "집중익절" in sig_val:
             c_d.fill = fill_sig_blue
             c_d.font = font_white_bold
         elif "선제익절" in sig_val:
-            c_d.fill = fill_sig_sky
+            c_d.fill = fill_sig_emerald
             c_d.font = font_white_bold
         elif sig_val == "관망":
             c_d.fill = fill_sig_green
@@ -961,7 +902,7 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full
         row_idx += 1
 
     widths = {
-        'A': 12, 'B': 10, 'C': 10, 'D': 20, 'E': 3, 'F': 14, 'G': 9,
+        'A': 12, 'B': 10, 'C': 10, 'D': 16, 'E': 3, 'F': 14, 'G': 9,
         'H': 7, 'I': 7, 'J': 7, 'K': 8, 'L': 7,
         'M': 10, 'N': 10, 'O': 10, 'P': 3, 'Q': 10, 'R': 10, 'S': 10
     }
@@ -973,7 +914,7 @@ def generate_original_style_excel(stock_name, stock_code, s, df_display, df_full
     return out.getvalue()
 
 # ---------------------------------------------------------
-# 6. 메인 데이터 로드 및 4대 지표·거래량 융합 브리핑 헤더
+# 6. 메인 데이터 로드 및 상단 가이드 배너
 # ---------------------------------------------------------
 kospi_df, _ = get_naver_stock_data("KOSPI", count=5)
 kosdaq_df, _ = get_naver_stock_data("KOSDAQ", count=5)
@@ -985,7 +926,7 @@ kosdaq_val = int(kosdaq_df['Close'].iloc[-1]) if kosdaq_df is not None and not k
 kosdaq_chg = ((kosdaq_df['Close'].iloc[-1] / kosdaq_df['Close'].iloc[-2]) - 1.0) * 100 if kosdaq_df is not None and len(kosdaq_df) >= 2 else 0.0
 
 if stock_code:
-    with st.spinner(f"[{stock_name} ({stock_code})] 4대 파동 지표 및 거래량 결합 타점을 분석 중입니다..."):
+    with st.spinner(f"[{stock_name} ({stock_code})] 4대 지표 및 거래량 타점을 정밀 분석 중입니다..."):
         raw_df, _ = get_naver_stock_data(stock_code, count=1500)
 
     if raw_df is not None and not raw_df.empty:
@@ -1017,7 +958,6 @@ if stock_code:
                 tp = 0
             target_prices_dict[s_tgt] = tp
 
-        # 보유 포트폴리오에서 현재 조회 중인 종목 찾기
         my_port_item = None
         acc_principal = int(st.session_state.account_data.get("user_principal", 30000000))
         if 'items' in st.session_state.account_data:
@@ -1026,34 +966,34 @@ if stock_code:
                     my_port_item = itm
                     break
 
-        # 상단 실전 액션 가이드 배너 (4대 지표 + 거래량 결합 판정)
-        if "전량청산" in cur_sig:
-            action_title = f"🔵 [{cur_sig}] ➔ 고점 모멘텀 소멸·상투 포착! 잔여 물량 전량 청산"
-            action_item = "💡 **[4대 지표 & 거래량 수칙]**: S≥0(LM≥MM) 과열권에서 S값이 꺾이거나 대량거래 음봉(G≥1.5)이 출회했습니다. **남은 물량을 100% 현금화**하고 인버스 헤지를 점검하세요."
-            badge_color = "#0D47A1"
+        # 상단 실전 액션 배너 (색상 및 라벨 슬림화 동기화)
+        if "청산" in cur_sig:
+            action_title = f"🔵 [{cur_sig}] ➔ 고점 꺾임·상투 출회! 잔여 물량 전량 청산"
+            action_item = "💡 **[매도 수칙]**: S≥0 과열권에서 음봉 꺾임 또는 대량거래(G≥1.5)가 발생했습니다. **남은 물량을 100% 전량 익절**하고 현금을 회수하세요."
+            badge_color = "#1A237E" # 딥 네이비
         elif "집중익절" in cur_sig:
-            action_title = f"🔵 [{cur_sig}] ➔ 상승 목표 에너지(LM≥MM) 100% 도달! 집중 익절 구간"
-            action_item = "💡 **[4대 지표 & 거래량 수칙]**: S값이 0 이상으로 직전 파동 진폭(MM)을 모두 채웠습니다. **보유 물량의 40%를 집중 익절**하고 꺾임 신호를 주시하세요."
-            badge_color = "#1976D2"
+            action_title = f"🔵 [{cur_sig}] ➔ 상승 파동 에너지(LM≥MM) 100% 충족!"
+            action_item = "💡 **[매도 수칙]**: S값이 0 이상으로 목표치를 모두 채웠습니다. **보유 물량의 40%를 집중 익절**하고 인버스 50% 진입을 준비하세요."
+            badge_color = "#1565C0" # 코발트 블루
         elif "선제익절" in cur_sig:
-            action_title = f"🌐 [{cur_sig}] ➔ 상승 에너지 85% 복원! 1차 안전마진 확보 구간"
-            action_item = "💡 **[4대 지표 & 거래량 수칙]**: LM이 MM의 85% 이상 올라왔습니다. 평단가 위라면 **보유 물량의 30%를 선제 분할 익절**하여 현금 안전마진을 확보하세요."
-            badge_color = "#0288D1"
+            action_title = f"🟢 [{cur_sig}] ➔ 파동 에너지 85% 복원 (S≥-5 도달)"
+            action_item = "💡 **[매도 수칙]**: 반등이 상당 부분 진행되었습니다. 평단가 위라면 **보유 물량의 30%를 선제 분할 매도**하여 현금 안전마진을 확보하세요."
+            badge_color = "#00897B" # 에메랄드 틸
         elif "4차" in cur_sig:
-            action_title = f"🟣 [{cur_sig}] ➔ 1차 진바닥 & 거래량 시그널 포착!"
-            action_item = "💡 **[4대 지표 & 거래량 수칙]**: S ≤ -55 바닥권입니다. 투매 손바뀜(G≥1.5) 또는 매도 고갈(G≤0.7)과 함께 **4차 승부수(30%)를 집행**하고 예비 현금 30%는 홀딩하세요!"
+            action_title = f"🟣 [{cur_sig}] ➔ S≤-55 바닥권 & 거래량 변곡 포착!"
+            action_item = "💡 **[매수 수칙]**: 1차 바닥권 도달. 투매 손바뀜(G≥1.5) 또는 매도 고갈(G≤0.7)과 함께 **4차 비중(30%)을 집행**하고 예비 현금 30%는 사수하세요."
             badge_color = "#7B1FA2"
         elif "3차" in cur_sig or "2차" in cur_sig:
-            action_title = f"🔴 [{cur_sig}] ➔ 실질 낙폭(PM) 할인 확인 & 분할 매수 구간!"
-            action_item = "💡 **[4대 지표 & 거래량 수칙]**: 고점 대비 낙폭(PM) 할인이 진행 중입니다. 추격 매수 없이 **단계별 지정가 이하에서만 정해진 비중(2차 10%, 3차 25%)**을 모아가세요."
-            badge_color = "#D32F2F"
+            action_title = f"🔴 [{cur_sig}] ➔ 고점 대비 낙폭(PM) 할인 확인 구간!"
+            action_item = "💡 **[매수 수칙]**: 고점 대비 실질 할인이 확인되었습니다. **목표 지정가 이하에서만 정해진 비중(2차 10%, 3차 25%)**을 차분히 분할 매수하세요."
+            badge_color = "#C62828"
         elif "1차" in cur_sig:
             action_title = f"🟠 [{cur_sig}] ➔ 하락 초입 정찰병 진입 신호!"
-            action_item = "💡 **[4대 지표 & 거래량 수칙]**: 1차 탐색 비중(5%)만 소액 체결하거나, 이미 보유 물량이 있다면 2·3차(PM≤-15%) 할인 구간까지 대기하세요."
+            action_item = "💡 **[매수 수칙]**: 1차 탐색 소액(5%)만 진입하거나, 이미 보유 물량이 있다면 2·3차 할인 가격까지 대기하세요."
             badge_color = "#FF8F00"
         else:
-            action_title = "🟢 [관망 구간] ➔ 매수·매도 대기 및 현금 사수"
-            action_item = "💡 **[4대 지표 & 거래량 수칙]**: 어중간한 위치에서의 매매를 멈추고, 1~4차 지정가 매수 타점이나 선제 익절(LM≥MM×85%) 신호가 올 때까지 대기하세요."
+            action_title = "🟢 [관망 구간] ➔ 타점 대기 및 현금 사수"
+            action_item = "💡 **[행동 수칙]**: 어중간한 위치에서의 뇌동매매를 멈추고, 지정가 매수 타점이나 선제 익절 신호가 올 때까지 예수금을 안전하게 지키세요."
             badge_color = "#2E7D32"
 
         gauge_pct = max(2, min(98, int(((current_s_val + 70) / 100.0) * 100)))
@@ -1063,19 +1003,19 @@ if stock_code:
         <div style="background-color: #F8FAFC; border-left: 6px solid {badge_color}; padding: 15px 18px; border-radius: 10px; margin-bottom: 14px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
                 <h3 style="margin: 0; color: {badge_color}; font-size: 1.15rem;">{action_title}</h3>
-                <span style="font-size:0.85rem; color:#555; font-weight:600;">기준일: {s['date']} | 거래비율(G): <b>{s['vol_ratio']:.2f}배</b> | 추세: <b>{s['state']}</b></span>
+                <span style="font-size:0.85rem; color:#555; font-weight:600;">기준일: {s['date']} | 비율(G): <b>{s['vol_ratio']:.2f}배</b> | 추세: <b>{s['state']}</b></span>
             </div>
             <p style="margin: 8px 0 6px 0; color: #222222; font-size: 0.92rem;">
-                <b>4대 파동 지표 현황</b> — MM(진폭): <code>{s['MM']}%</code> | PM(고점낙폭): <code>{s['PM']}%</code> | LM(저점반등): <code>{s['LM']}%</code> | <b>현재 S값: <code style="font-size:1.0rem; color:{badge_color};">{current_s_val}</code></b> (전일 S: {s['prev_s']})
+                <b>4대 지표</b> — MM(진폭): <code>{s['MM']}%</code> | PM(낙폭): <code>{s['PM']}%</code> | LM(반등): <code>{s['LM']}%</code> | <b>S값: <code style="font-size:1.0rem; color:{badge_color};">{current_s_val}</code></b>
             </p>
             <div style="font-size:0.78rem; color:#666; display:flex; justify-content:space-between; margin-top:6px;">
-                <span>🟣 4차 바닥(-55)</span><span>🔴 3차(-40, PM≤-15%)</span><span>🟠 1·2차(-25)</span><span>🟢 관망</span><span>🔵 익절·청산권(S≥-5~0)</span>
+                <span>🟣 4차(-55)</span><span>🔴 3차(-40)</span><span>🟠 1·2차(-25)</span><span>🟢 관망</span><span>🔵 익절·청산(S≥-5~0)</span>
             </div>
-            <div class="gauge-container" style="background: linear-gradient(90deg, #7B1FA2 0%, #D32F2F 30%, #FF8F00 45%, #4CAF50 65%, #1976D2 100%);">
-                <div style="position:absolute; left:{gauge_pct}%; top:0; bottom:0; width:6px; background-color:#FFFFFF; border:2px solid #000; border-radius:3px;" title="현재 S값 위치"></div>
+            <div class="gauge-container" style="background: linear-gradient(90deg, #7B1FA2 0%, #D32F2F 30%, #FF8F00 45%, #4CAF50 65%, #00897B 80%, #1A237E 100%);">
+                <div style="position:absolute; left:{gauge_pct}%; top:0; bottom:0; width:6px; background-color:#FFFFFF; border:2px solid #000; border-radius:3px;"></div>
             </div>
             <div style="font-size:0.86rem; color:#333; margin-top:6px;">
-                🎯 <b>단계별 지정가 매수 타점</b> — 
+                🎯 <b>지정가 매수 타점</b> — 
                 <span class="order-badge" style="background:#FFF3E0; color:#E65100;">1차(5%): {tp1:,}원</span>
                 <span class="order-badge" style="background:#FFEBEE; color:#C62828;">2차(10%): {tp2:,}원</span>
                 <span class="order-badge" style="background:#FFCDD2; color:#B71C1C;">3차(25%): {tp3:,}원</span>
@@ -1087,15 +1027,14 @@ if stock_code:
         </div>
         """, unsafe_allow_html=True)
 
-        # 상단 4대 요약 메트릭 카드
         c1, c2, c3, c4 = st.columns(4)
         c1.metric(f"{stock_name} 현재가", f"{curr_p:,}원", f"{s['cur_chg']:+.2f}%")
         if my_port_item:
             my_avg = my_port_item['avg_price']
             my_ret = ((curr_p / my_avg) - 1.0) * 100 if my_avg > 0 else 0.0
-            c2.metric("내 보유 평단가 / 수익률", f"{my_avg:,}원 ({my_port_item['qty']:,}주)", f"{my_ret:+.2f}%")
+            c2.metric("내 보유 평단 / 수익률", f"{my_avg:,}원 ({my_port_item['qty']:,}주)", f"{my_ret:+.2f}%")
         else:
-            c2.metric("S값 / 파동 고저점", f"S: {s['S']} (G:{s['vol_ratio']:.2f}배)", f"고점:{max_mn_val:,} / 저점:{min_pq_val:,}")
+            c2.metric("S값 / 거래비율(G)", f"S: {s['S']}", f"G: {s['vol_ratio']:.2f}배 (전일S: {s['prev_s']})")
         c3.metric("코스피 (KOSPI)", f"{kospi_val:,}", f"{kospi_chg:+.2f}%")
         c4.metric("코스닥 (KOSDAQ)", f"{kosdaq_val:,}", f"{kosdaq_chg:+.2f}%")
 
@@ -1104,17 +1043,14 @@ if stock_code:
         # ---------------------------------------------------------
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📊 매수·매도 표 & 차트", 
-            "📢 마감 브리핑 & 탈출 시뮬레이터", 
-            "🎯 매수 & 매도 자동 주문표", 
-            "💼 포트폴리오 & 자동 일지", 
+            "📢 마감 브리핑 & 탈출 계산기", 
+            "🎯 매수 & 매도 주문표", 
+            "💼 포트폴리오 & 체결 일지", 
             "💾 엑셀 다운로드 & 백업"
         ])
 
-        # -----------------------------
-        # TAB 1: 매수·매도 표 (전체) + 직관적 차트
-        # -----------------------------
         with tab1:
-            with st.expander("📈 [직관적 차트 보기] 최근 1년 주가 흐름 및 S값 바닥·고점 타점 추이", expanded=False):
+            with st.expander("📈 [차트 보기] 최근 1년 종가 및 S값 추이", expanded=False):
                 chart_df = df_full_result.tail(250).copy()
                 chart_df['일자'] = pd.to_datetime(chart_df['일자'])
                 chart_df.set_index('일자', inplace=True)
@@ -1124,16 +1060,16 @@ if stock_code:
                     st.caption(f"🔹 {stock_name} 최근 1년 종가 흐름")
                     st.line_chart(chart_df[['종가(B)']], height=220)
                 with ch_col2:
-                    st.caption("🔹 최근 1년 S값 추이 (-25 이하 분할매수권 / -5~0 이상 분할익절·청산권)")
+                    st.caption("🔹 최근 1년 S값 추이 (-25 이하 매수권 / -5 이상 매도권)")
                     st.line_chart(chart_df[['S']], height=220)
 
             f_col1, f_col2 = st.columns([2.5, 1.5])
             with f_col1:
-                st.caption("📈 4대 지표(MM, PM, LM, S)와 거래비율(G)이 통합 반영된 실시간 파동 테이블입니다.")
+                st.caption("📈 슬림 라벨과 완전 차별화된 색상이 적용된 일체형 파동 테이블입니다.")
             with f_col2:
                 sig_filter = st.selectbox(
-                    "🔍 표 신호 필터링",
-                    ["전체 일자 보기", "매수 진입 신호만 모아보기 (1~4차)", "익절·청산 신호만 모아보기"],
+                    "🔍 신호 필터링",
+                    ["전체 일자 보기", "매수 진입 신호만 (1~4차)", "익절·청산 신호만"],
                     label_visibility="collapsed"
                 )
 
@@ -1141,15 +1077,15 @@ if stock_code:
             if "매수 진입" in sig_filter:
                 df_rev = df_rev[df_rev['매수신호'].str.contains("신호|진입")].copy()
             elif "익절·청산" in sig_filter:
-                df_rev = df_rev[df_rev['매수신호'].str.contains("익절|청산|매도")].copy()
+                df_rev = df_rev[df_rev['매수신호'].str.contains("익절|청산")].copy()
 
             col_configs = {
                 "일자": st.column_config.TextColumn("일자", width=86),
                 "종가(B)": st.column_config.TextColumn("종가", width=68),
                 "등락률(C)": st.column_config.TextColumn("등락률", width=62),
-                "매수신호": st.column_config.TextColumn("매수·매도신호", width=135),
+                "매수신호": st.column_config.TextColumn("매수·매도신호", width=110), # 최적화된 너비
                 "거래량(F)": st.column_config.TextColumn("거래량", width=98),
-                "거래비율(G)": st.column_config.TextColumn("비율(G)", width=55),
+                "거래비율(G)": st.column_config.TextColumn("비율", width=55),
                 "MM": st.column_config.TextColumn("MM", width=46),
                 "PM": st.column_config.TextColumn("PM", width=46),
                 "LM": st.column_config.TextColumn("LM", width=46),
@@ -1170,36 +1106,32 @@ if stock_code:
                 column_config=col_configs
             )
 
-        # -----------------------------
-        # TAB 2: 마감 브리핑 & 내 계좌 연동 시뮬레이터
-        # -----------------------------
         with tab2:
             st.markdown(f"#### 📢 [{s['date']}] {stock_name} 장 마감 종합 브리핑")
 
             if kosdaq_chg <= -1.5:
                 mkt_stage = "🚨 [지수 급락 / 공포 심리 고조]"
                 mkt_color = "#D32F2F"
-                mkt_eval = "외국인·기관의 매도세가 집중되며 지수가 하방 지지선을 테스트하는 장세입니다. 추격매수는 금물이며 PM 낙폭과 3·4차 지정가 방어선 가격만 지켜봐야 합니다."
+                mkt_eval = "외국인·기관 매도세로 지수가 하방을 테스트했습니다. 추격매수는 금물이며 지정가 방어선만 지켜보세요."
             elif kosdaq_chg < 0:
                 mkt_stage = "📉 [지수 약세 조정 / 숨고르기]"
                 mkt_color = "#1976D2"
-                mkt_eval = "차익 매물 출회로 시장이 조정을 받았습니다. 투매성 패닉은 아니며 파동상 하방 지지력과 거래량(G) 변화를 탐색하는 구간입니다."
+                mkt_eval = "차익 매물 출회로 시장이 쉬어가는 구간입니다. 파동 지지력과 거래비율(G)을 탐색 중입니다."
             elif kosdaq_chg >= 1.5:
                 mkt_stage = "🔥 [지수 급반등 / 매수세 유입]"
                 mkt_color = "#C2185B"
-                mkt_eval = "쇼트커버링과 저가 매수세가 유입되며 강하게 반등한 장세입니다. LM 반등 에너지가 MM에 근접하는지 확인하며 분할 익절 타점을 주시하세요."
+                mkt_eval = "쇼트커버링과 저가 매수로 강하게 반등했습니다. 선제 익절 타점 도달 여부를 확인하세요."
             else:
-                mkt_stage = "⚖️ [지수 보합권 / 방향성 탐색]"
+                mkt_stage = "⚖️ [지수 보합권 / 눈치보기]"
                 mkt_color = "#333333"
-                mkt_eval = "뚜렷한 수급 주체 없이 지수가 제한된 박스권에서 등락했습니다. 파동의 방향성이 확정되기 전까지는 관망이 유리합니다."
+                mkt_eval = "방향성 탐색 중입니다. 지표 신호가 확정되기 전까지 관망을 유지하세요."
 
             st.markdown(f"""
             <div class="brief-card" style="border-left: 5px solid {mkt_color};">
                 <div class="brief-title" style="color: {mkt_color};">1. 전체 시장 종합 브리핑</div>
                 <div style="font-size:0.88rem; color:#222; line-height:1.6;">
                     • <b>지수 현황</b>: 코스피 <b>{kospi_val:,}p</b> ({kospi_chg:+.2f}%) | 코스닥 <b>{kosdaq_val:,}p</b> ({kosdaq_chg:+.2f}%)<br>
-                    • <b>시장 국면 판정</b>: <span style="font-weight:bold; color:{mkt_color};">{mkt_stage}</span><br>
-                    • <b>시장 상세 진단</b>: {mkt_eval}
+                    • <b>시장 국면</b>: <span style="font-weight:bold; color:{mkt_color};">{mkt_stage}</span> ({mkt_eval})
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -1212,31 +1144,22 @@ if stock_code:
                 lower_shadow = min(o_p, c_p) - l_p
 
                 if lower_shadow / candle_range >= 0.45 and (lower_shadow >= body_size * 1.5):
-                    candle_type = "🔨 [아래꼬리 망치형 / 저가 매수 유입]"
+                    candle_type = "🔨 [아래꼬리 망치형]"
                     candle_color = "#D32F2F"
-                    candle_desc = "장중 급락을 저가에서 강하게 받아내며 아래꼬리를 길게 달았습니다. <b>단기 바닥 지지력이 확인되는 긍정 시그널</b>입니다."
+                    candle_desc = "장중 급락을 저가에서 받아냈습니다. <b>단기 바닥 지지 긍정 시그널</b>입니다."
                 elif c_p < o_p and (body_size / candle_range >= 0.65):
-                    candle_type = "📉 [장대음봉 / 매도세 우위]"
+                    candle_type = "📉 [장대음봉]"
                     candle_color = "#1976D2"
-                    candle_desc = "장 마감까지 매도 압력이 이어졌습니다. 고점권(S≥0)이라면 즉시 청산하고, 하락권이라면 <b>다음 방어선까지 차분히 대기</b>해야 합니다."
-                elif body_size / candle_range <= 0.2:
-                    candle_type = "⚖️ [도지(팽이형) / 팽팽한 균형]"
-                    candle_color = "#333333"
-                    candle_desc = "시가와 종가가 거의 일치하며 <b>추세가 진정되고 숨고르기</b>에 들어간 형태입니다."
-                elif c_p > o_p:
-                    candle_type = "📈 [양봉 반등 / 매수 우위]"
-                    candle_color = "#D32F2F"
-                    candle_desc = "시가 대비 종가를 끌어올리며 양봉 마감했습니다. <b>단기 기술적 반등 및 LM 회복 흐름이 유효</b>합니다."
+                    candle_desc = "매도세가 지속되었습니다. 고점권(S≥0)이면 청산, 하락권이면 대기하세요."
                 else:
-                    candle_type = "단기 조정 캔들"
+                    candle_type = "⚖️ [일반 박스권 캔들]"
                     candle_color = "#555555"
-                    candle_desc = "통상적인 박스권 잔파동 내에서 등락을 보였습니다."
+                    candle_desc = "통상적인 박스권 잔파동 내에서 등락했습니다."
 
                 st.markdown(f"""
                 <div class="brief-card">
-                    <div class="brief-title">2. 🕯️ 당일 캔들 & 꼬리 분석</div>
+                    <div class="brief-title">2. 🕯️ 당일 캔들 형태</div>
                     <div style="font-size:0.87rem; color:#222; line-height:1.6;">
-                        • <b>시세</b>: 시 {o_p:,} / 고 {h_p:,} / 저 {l_p:,} / <b>종 {c_p:,}원</b><br>
                         • <b>판정</b>: <span style="font-weight:bold; color:{candle_color};">{candle_type}</span><br>
                         • <b>해석</b>: {candle_desc}
                     </div>
@@ -1246,47 +1169,27 @@ if stock_code:
             with b_col2:
                 vol_ratio_val = s['vol_ratio']
                 if vol_ratio_val >= 1.5:
-                    vol_badge = "🚨 [대량 거래 폭발 (G≥1.5) / 주요 변곡점]"
+                    vol_badge = "🚨 [거래량 폭발 (G≥1.5)]"
                     vol_color = "#D32F2F"
-                    vol_desc = "거래량이 전일 대비 1.5배 이상 급증했습니다. <b>바닥권(S≤-40)이면 투매 손바뀜 진바닥</b>, <b>고점권(S≥0)이면 상투(전량청산)</b> 신호입니다."
+                    vol_desc = "거래량이 1.5배 이상 터졌습니다. 바닥권은 투매 손바뀜, 고점권은 상투 청산 시그널입니다."
                 elif vol_ratio_val <= 0.7:
-                    vol_badge = "💤 [거래량 소강 (G≤0.7) / 매도세 진정]"
+                    vol_badge = "💤 [거래량 소강 (G≤0.7)]"
                     vol_color = "#1976D2"
-                    vol_desc = "거래량이 전일 대비 70% 이하로 말라붙었습니다. 하락 압력이 둔화되며 <b>지지선을 다지는 바닥 확인 구간</b>입니다."
+                    vol_desc = "매도세가 진정되며 바닥을 다지는 구간입니다."
                 else:
-                    vol_badge = "⚖️ [평균 수준 거래량 유지]"
+                    vol_badge = "⚖️ [평균 수준 유지]"
                     vol_color = "#333333"
-                    vol_desc = "전일과 유사한 거래량을 유지하며 기존 파동 흐름을 이어가고 있습니다."
+                    vol_desc = "전일과 유사한 거래량을 유지 중입니다."
 
                 st.markdown(f"""
                 <div class="brief-card">
-                    <div class="brief-title">3. ⚡ 거래량 비율(G) 시그널 판독</div>
+                    <div class="brief-title">3. ⚡ 거래량 비율(G) 판독</div>
                     <div style="font-size:0.87rem; color:#222; line-height:1.6;">
-                        • <b>거래량</b>: {s['C1']:,}주 (전일 대비 <b>{vol_ratio_val:.2f}배</b>)<br>
                         • <b>판정</b>: <span style="color:{vol_color}; font-weight:bold;">{vol_badge}</span><br>
                         • <b>해석</b>: {vol_desc}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-
-            diff_3 = tp3 - curr_p if tp3 > 0 else 0
-            diff_3_pct = (diff_3 / curr_p) * 100.0 if curr_p > 0 else 0.0
-            diff_4 = tp4 - curr_p if tp4 > 0 else 0
-            diff_4_pct = (diff_4 / curr_p) * 100.0 if curr_p > 0 else 0.0
-
-            recent_5 = df_full_result.tail(5).copy()
-            s_traj_html = " ➔ ".join([f"<b>{row['일자'][5:]}</b> (S:<code>{row['S']}</code>/G:<code>{row['거래비율(G)']:.1f}</code>)" for _, row in recent_5.iterrows()])
-
-            st.markdown(f"""
-            <div class="brief-card">
-                <div class="brief-title">4. 🎯 주요 방어선까지 남은 거리 & 최근 5일 S·거래비율(G) 궤적</div>
-                <div style="font-size:0.88rem; color:#222; line-height:1.6;">
-                    • <b>3차 진입가 ({tp3:,}원)까지</b>: <span style="color:{'#D32F2F' if diff_3 < 0 else '#2E7D32'}; font-weight:bold;">{diff_3:+d}원 ({diff_3_pct:+.2f}%)</span> | 
-                      <b>4차 강력진입가 ({tp4:,}원)까지</b>: <span style="color:{'#D32F2F' if diff_4 < 0 else '#2E7D32'}; font-weight:bold;">{diff_4:+d}원 ({diff_4_pct:+.2f}%)</span><br>
-                    • <b>최근 5일 S값 & 거래비율 변화</b>: {s_traj_html}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
 
             if my_port_item:
                 curr_my_qty = my_port_item['qty']
@@ -1294,84 +1197,41 @@ if stock_code:
                 curr_eval_pct = ((curr_p / curr_my_price) - 1.0) * 100 if curr_my_price > 0 else 0
                 
                 budget_10pct = int(acc_principal * 0.10)
-                budget_25pct = int(acc_principal * 0.25)
-                
                 add_qty_10 = int(budget_10pct / tp3) if tp3 > 0 else 0
                 sim_price_10 = int((curr_my_qty * curr_my_price + add_qty_10 * tp3) / (curr_my_qty + add_qty_10)) if (curr_my_qty + add_qty_10) > 0 else curr_my_price
-                
-                add_qty_25 = int(budget_25pct / tp3) if tp3 > 0 else 0
-                sim_price_25 = int((curr_my_qty * curr_my_price + add_qty_25 * tp3) / (curr_my_qty + add_qty_25)) if (curr_my_qty + add_qty_25) > 0 else curr_my_price
 
                 st.markdown(f"""
                 <div class="brief-card" style="border-left: 5px solid #6A1B9A; background-color:#FDFBFF;">
-                    <div class="brief-title" style="color: #6A1B9A;">5. 🧮 내 계좌 연동 평단가 인하(탈출) 시뮬레이터 (내 원금 {acc_principal:,}원 기준)</div>
+                    <div class="brief-title" style="color: #6A1B9A;">4. 🧮 내 계좌 평단가 인하 시뮬레이터</div>
                     <div style="font-size:0.88rem; color:#222; line-height:1.65;">
-                        • <b>현재 내 보유 포지션</b>: <b>{curr_my_qty:,}주</b> | 현재 평단가 <b>{curr_my_price:,}원</b> (현재 수익률: <span style="color:{'#D32F2F' if curr_eval_pct > 0 else '#1976D2'}; font-weight:bold;">{curr_eval_pct:+.2f}%</span> / 본전 탈출까지 <b>{curr_my_price - curr_p:+,}원</b> 필요)<br>
-                        • <b>시나리오 A [예비 방어 10% ({budget_10pct:,}원 / {add_qty_10:,}주) @ {tp3:,}원 체결 시]</b>:<br>
-                          ➔ 평단가가 <b>{curr_my_price:,}원 ➔ <span style="color:#D32F2F; font-size:0.98rem;">{sim_price_10:,}원</span></b>으로 <b>{curr_my_price - sim_price_10:,}원 즉시 인하!</b><br>
-                        • <b>시나리오 B [3차 기본 비중 25% ({budget_25pct:,}원 / {add_qty_25:,}주) @ {tp3:,}원 체결 시]</b>:<br>
-                          ➔ 평단가가 <b>{curr_my_price:,}원 ➔ <span style="color:#6A1B9A; font-size:0.98rem;">{sim_price_25:,}원</span></b>으로 <b>{curr_my_price - sim_price_25:,}원 대폭 인하!</b>
+                        • <b>현재 포지션</b>: {curr_my_qty:,}주 | 평단 {curr_my_price:,}원 (수익률: <span style="color:{'#D32F2F' if curr_eval_pct > 0 else '#1976D2'}; font-weight:bold;">{curr_eval_pct:+.2f}%</span>)<br>
+                        • <b>만약 3차 목표가({tp3:,}원)에서 예비 10%({budget_10pct:,}원) 추가 매수 시</b>:<br>
+                          ➔ 내 평단가는 <b>{curr_my_price:,}원 ➔ <span style="color:#D32F2F; font-size:1.0rem;">{sim_price_10:,}원</span></b>으로 <b>{curr_my_price - sim_price_10:,}원 즉시 인하!</b>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-            else:
-                st.info(f"💡 [💼 포트폴리오 & 자동 일지] 탭에 **{stock_name}** 보유 수량과 평단가를 등록해 두시면, 내 원금 기준 정확한 물타기 평단가 인하 시뮬레이션이 자동 계산됩니다.")
 
-            col_link1, col_link2 = st.columns(2)
-            with col_link1:
-                st.link_button(f"📋 {stock_name} 실시간 공시·뉴스 (네이버 증권)", f"https://stock.naver.com/domestic/stock/{stock_code}/news", use_container_width=True)
-            with col_link2:
-                st.link_button(f"👥 {stock_name} 기관·외국인 수급 동향", f"https://stock.naver.com/domestic/stock/{stock_code}/trend", use_container_width=True)
-
-        # -----------------------------
-        # TAB 3: 4대 지표 + 거래량 결합 매수 & 매도 자동 주문표
-        # -----------------------------
         with tab3:
-            st.markdown("##### 🎯 [4대 지표 + 거래량 결합] 매수 & 매도 자동 주문 계산기")
-            st.caption("내 총 투자 원금과 보유 평단가를 바탕으로 **단계별 매수 주문 수량**과 **분할 익절·청산 매도 주문 수량**을 자동 산출합니다.")
-            
-            total_seed = st.number_input(
-                "💰 기준 투자 원금 설정 (원) — 기본값은 내 포트폴리오 원금과 연동됩니다.",
-                min_value=100000, max_value=10000000000, value=acc_principal, step=1000000, format="%d"
-            )
+            st.markdown("##### 🎯 [4대 지표 + 거래량] 매수 & 매도 주문 계산기")
+            total_seed = st.number_input("💰 기준 투자 원금 (원)", min_value=100000, value=acc_principal, step=1000000, format="%d")
 
-            # 1. 매수 주문표
-            st.markdown("###### 📥 1단계: 4대 지표(S·PM) + 거래량(G) 결합 분할 매수 주문표 (기본 70% + 예비 30%)")
+            st.markdown("###### 📥 1. 분할 매수 주문표 (기본 70% + 예비 30%)")
             base_plan = [
-                {"단계": "🟠 1차 신호", "지표·거래량 조건": "S ≤ -25", "비중": 0.05, "목표가": tp1, "가이드": "하락 초입 정찰병 진입 (5%)"},
-                {"단계": "🔴 2차 진입", "지표·거래량 조건": "S ≤ -32 & PM ≤ -10%", "비중": 0.10, "목표가": tp2, "가이드": "고점 대비 10% 이상 할인 확인 후 진입 (10%)"},
-                {"단계": "🔴 3차 집중진입", "지표·거래량 조건": "S ≤ -40 & PM ≤ -15%", "비중": 0.25, "목표가": tp3, "가이드": "실질 낙폭 확인 후 주력 물량 확보 (25%)"},
-                {"단계": "🟣 4차 강력진입", "지표·거래량 조건": "S ≤ -55 & (G≥1.5 투매 or G≤0.7 진정)", "비중": 0.30, "목표가": tp4, "가이드": "🚨 거래량 변곡 확인 후 1차 바닥 승부수 (30%)"},
-                {"단계": "🛡️ 예비 1차 방어", "지표·거래량 조건": "재하락 S ≤ -40 (반등 실패 시)", "비중": 0.10, "목표가": tp3, "가이드": "4차 진입 후 익절 없이 다시 밀릴 때 10% 투입"},
-                {"단계": "🚨 최후 2차 방어", "지표·거래량 조건": "재하락 S ≤ -55 (전저점 언더슈팅)", "비중": 0.20, "목표가": tp4, "가이드": "극단적 패닉셀 시 마지막 20% 투입"}
+                {"단계": "🟠 1차 신호", "조건": "S ≤ -25", "비중": "5%", "예산": f"{int(total_seed*0.05):,}원", "목표단가": f"{tp1:,}원", "수량": f"{int(total_seed*0.05//tp1 if tp1>0 else 0):,}주", "가이드": "하락 초입 소액 정찰"},
+                {"단계": "🔴 2차 진입", "조건": "S ≤ -32 & PM ≤ -10%", "비중": "10%", "예산": f"{int(total_seed*0.10):,}원", "목표단가": f"{tp2:,}원", "수량": f"{int(total_seed*0.10//tp2 if tp2>0 else 0):,}주", "가이드": "10% 할인 확인 후 진입"},
+                {"단계": "🔴 3차 진입", "조건": "S ≤ -40 & PM ≤ -15%", "비중": "25%", "예산": f"{int(total_seed*0.25):,}원", "목표단가": f"{tp3:,}원", "수량": f"{int(total_seed*0.25//tp3 if tp3>0 else 0):,}주", "가이드": "실질 낙폭 확인 주력 물량"},
+                {"단계": "🟣 4차 진입", "조건": "S ≤ -55 & (G≥1.5 or G≤0.7)", "비중": "30%", "예산": f"{int(total_seed*0.30):,}원", "목표단가": f"{tp4:,}원", "수량": f"{int(total_seed*0.30//tp4 if tp4>0 else 0):,}주", "가이드": "🚨 거래량 변곡 승부수"},
+                {"단계": "🛡️ 예비 1차", "조건": "재하락 S ≤ -40", "비중": "10%", "예산": f"{int(total_seed*0.10):,}원", "목표단가": f"{tp3:,}원", "수량": f"{int(total_seed*0.10//tp3 if tp3>0 else 0):,}주", "가이드": "반등 실패 재하락 시 방어"},
+                {"단계": "🚨 최후 2차", "조건": "재하락 S ≤ -55", "비중": "20%", "예산": f"{int(total_seed*0.20):,}원", "목표단가": f"{tp4:,}원", "수량": f"{int(total_seed*0.20//tp4 if tp4>0 else 0):,}주", "가이드": "극단적 패닉셀 최후 투하"}
             ]
-            
-            calc_base = []
-            for row in base_plan:
-                amt = int(total_seed * row["비중"])
-                t_price = row["목표가"]
-                order_qty = int(amt // t_price) if t_price > 0 else 0
-                reach_status = "✅ 도달 완료 (체결권)" if (curr_p <= t_price and t_price > 0) else f"대기 ({t_price - curr_p:+,}원)"
-                calc_base.append({
-                    "매수 단계": row["단계"],
-                    "발동 지표 & 거래량 조건": row["지표·거래량 조건"],
-                    "투입 비중": f"{int(row['비중']*100)}%",
-                    "배정 예산": f"{amt:,}원",
-                    "지정가 목표가": f"{t_price:,}원",
-                    "예약 주문 수량": f"{order_qty:,}주",
-                    "현재가 상태": reach_status,
-                    "실전 행동 가이드": row["가이드"]
-                })
-            st.dataframe(pd.DataFrame(calc_base), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(base_plan), use_container_width=True, hide_index=True)
 
-            # 2. 매도(익절/청산) 주문표
             st.markdown("---")
-            st.markdown("###### 📤 2단계: 4대 지표(LM·MM·S) + 거래량(G) 결합 분할 익절 & 청산 주문표")
+            st.markdown("###### 📤 2. 분할 익절 & 청산 매도 주문표")
 
             user_avg_p = my_port_item['avg_price'] if my_port_item else curr_p
             user_hold_qty = my_port_item['qty'] if my_port_item else int((total_seed * 0.7) // curr_p) if curr_p > 0 else 1000
 
-            # 파동 에너지 기반 목표가 및 평단가 대비 목표가 계산
             wave_tp_85 = r10(min_pq_val * (1.0 + (s['MM'] * 0.85) / 100.0)) if (min_pq_val > 0 and s['MM'] > 0) else r10(user_avg_p * 1.05)
             wave_tp_100 = max_mn_val if max_mn_val > 0 else r10(user_avg_p * 1.10)
 
@@ -1384,91 +1244,49 @@ if stock_code:
             qty_step3 = max(0, user_hold_qty - qty_step1 - qty_step2)
 
             sell_plan = [
-                {
-                    "매도 단계": "🌐 1차 선제익절 (30%)",
-                    "4대 지표 & 거래량 트리거": "S ≥ -5 또는 LM ≥ (MM×85%) 도달",
-                    "권장 목표단가": f"{sell_p1:,}원 (평단+5% 이상)",
-                    "매도 주문 수량": f"{qty_step1:,}주 (보유량의 30%)",
-                    "실전 전략 의도": "파동 에너지 85% 회복 시 원금 안전마진 선제 확보"
-                },
-                {
-                    "매도 단계": "🔵 2차 집중익절 (40%)",
-                    "4대 지표 & 거래량 트리거": "S ≥ 0 돌파 (LM ≥ MM 에너지 100% 충족)",
-                    "권장 목표단가": f"{sell_p2:,}원 (전고점/평단+10%)",
-                    "매도 주문 수량": f"{qty_step2:,}주 (보유량의 약 35~40%)",
-                    "실전 전략 의도": "수학적 파동 상단 도달 시 주력 수익 확정 및 인버스 헤지 준비"
-                },
-                {
-                    "매도 단계": "🏁 3차 전량청산 (잔여 100%)",
-                    "4대 지표 & 거래량 트리거": "S ≥ 0 구간에서 S값 하락꺾임 or G ≥ 1.5 대량거래 음봉",
-                    "권장 목표단가": "당일 종가 / 시장가 즉시",
-                    "매도 주문 수량": f"{qty_step3:,}주 (남은 잔여수량 전량)",
-                    "실전 전략 의도": "상투(Buying Climax) 및 모멘텀 종료 시 미련 없이 전량 현금화"
-                },
-                {
-                    "매도 단계": "⚠️ 비상 리스크 컷",
-                    "4대 지표 & 거래량 트리거": "최후 방어선 투입 후 평단 대비 -15% 이탈 & G ≥ 1.5 투매",
-                    "권장 목표단가": f"{sell_cut:,}원 이탈 시",
-                    "매도 주문 수량": "비중 축소 / 리스크 컷",
-                    "실전 전략 의도": "레버리지 장기 물림 방지 및 계좌 생존권 보호"
-                }
+                {"익절 단계": "🟢 1차 선제익절", "트리거 조건": "S ≥ -5 또는 LM ≥ MM×85%", "목표단가": f"{sell_p1:,}원 (평단+5%↑)", "매도 수량": f"{qty_step1:,}주 (30%)", "의도": "안전마진 선제 확보"},
+                {"익절 단계": "🔵 2차 집중익절", "트리거 조건": "S ≥ 0 (LM ≥ MM 100% 도달)", "목표단가": f"{sell_p2:,}원 (평단+10%↑)", "매도 수량": f"{qty_step2:,}주 (40%)", "의도": "목표 파동 상단 주력 수익 실현"},
+                {"익절 단계": "🔵 3차 전량청산", "트리거 조건": "S ≥ 0 과열권 + 음봉 or G ≥ 1.5", "목표단가": "당일 종가 / 시장가", "매도 수량": f"{qty_step3:,}주 (전량)", "의도": "상투 및 모멘텀 소멸 시 전량 현금화"},
+                {"익절 단계": "⚠️ 비상 리스크컷", "트리거 조건": "최후 방어 후 평단 -15% 이탈", "목표단가": f"{sell_cut:,}원 이탈 시", "매도 수량": "상황별 손절", "의도": "장기 물림 방지 및 계좌 보호"}
             ]
             st.dataframe(pd.DataFrame(sell_plan), use_container_width=True, hide_index=True)
 
-        # -----------------------------
-        # TAB 4: 보유 포트폴리오 & 체결 일지 자동 연동
-        # -----------------------------
         with tab4:
             st.markdown("##### 💼 실전 계좌 잔고 & 3중 결합 스마트 리밸런싱")
             acc = st.session_state.account_data
 
             col_acc1, col_acc2, col_acc3 = st.columns([1.5, 1.5, 1.2])
             with col_acc1:
-                new_principal = st.number_input(
-                    "💰 내 총 투자 원금 (원)",
-                    min_value=0,
-                    value=int(acc.get("user_principal", 30000000)),
-                    step=1000000,
-                    format="%d"
-                )
+                new_principal = st.number_input("💰 총 원금", min_value=0, value=int(acc.get("user_principal", 30000000)), step=1000000)
             with col_acc2:
-                new_cash = st.number_input(
-                    "💵 현재 계좌 예수금(현금) (원)",
-                    min_value=0,
-                    value=int(acc.get("user_cash", 10000000)),
-                    step=500000,
-                    format="%d"
-                )
+                new_cash = st.number_input("💵 예수금(현금)", min_value=0, value=int(acc.get("user_cash", 10000000)), step=500000)
             with col_acc3:
                 st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                if st.button("💾 계좌 및 보유종목 전체 저장", use_container_width=True):
+                if st.button("💾 전체 저장", use_container_width=True):
                     acc["user_principal"] = new_principal
                     acc["user_cash"] = new_cash
                     if save_current_portfolio(acc):
-                        st.success("✅ 원금, 예수금, 종목 수량/평단가가 영구 저장되었습니다!")
+                        st.success("✅ 영구 저장 완료!")
 
             st.markdown("---")
             col_h1, col_h2 = st.columns([3, 1])
             with col_h1:
-                st.markdown("###### 📊 현재 보유 종목 현황 (수량·평단가 수정 후 상단 저장 버튼 클릭)")
+                st.markdown("###### 📊 보유 종목 현황")
             with col_h2:
-                if st.button("➕ 보유 종목 추가", use_container_width=True):
+                if st.button("➕ 종목 추가", use_container_width=True):
                     new_id = max([item["id"] for item in acc["items"]], default=0) + 1
-                    acc["items"].append({
-                        "id": new_id, "input_val": "", "confirmed_code": "233740", "confirmed_name": "종목 미지정", "qty": 0, "avg_price": 0
-                    })
+                    acc["items"].append({"id": new_id, "input_val": "", "confirmed_code": "233740", "confirmed_name": "종목 미지정", "qty": 0, "avg_price": 0})
                     save_current_portfolio(acc)
                     st.rerun()
 
-            total_invested_stocks = 0
-            total_eval_stocks = 0
+            total_invested_stocks, total_eval_stocks = 0, 0
             items_to_delete = []
             stock_eval_dict = {}
 
             for idx, item in enumerate(acc["items"]):
                 cols = st.columns([1.5, 0.7, 0.9, 0.9, 1.4, 0.4])
                 with cols[0]:
-                    item["input_val"] = st.text_input(f"종목명/코드 #{idx+1}", value=item["input_val"], key=f"mp_input_{item['id']}")
+                    item["input_val"] = st.text_input(f"종목 #{idx+1}", value=item["input_val"], key=f"mp_input_{item['id']}")
                 with cols[1]:
                     st.markdown("<div style='margin-top: 26px;'></div>", unsafe_allow_html=True)
                     if st.button("🔍 적용", key=f"btn_search_{item['id']}", use_container_width=True):
@@ -1478,9 +1296,9 @@ if stock_code:
                         save_current_portfolio(acc)
                         st.rerun()
                 with cols[2]:
-                    item["qty"] = st.number_input(f"보유 수량(주) #{idx+1}", min_value=0, value=int(item["qty"]), step=10, key=f"mp_qty_{item['id']}")
+                    item["qty"] = st.number_input(f"수량 #{idx+1}", min_value=0, value=int(item["qty"]), step=10, key=f"mp_qty_{item['id']}")
                 with cols[3]:
-                    item["avg_price"] = st.number_input(f"매수 평단가(원) #{idx+1}", min_value=0, value=int(item["avg_price"]), step=10, key=f"mp_price_{item['id']}")
+                    item["avg_price"] = st.number_input(f"평단 #{idx+1}", min_value=0, value=int(item["avg_price"]), step=10, key=f"mp_price_{item['id']}")
                 
                 live_df, _ = get_naver_stock_data(item["confirmed_code"], count=5)
                 live_curr_price = int(live_df['Close'].iloc[-1]) if live_df is not None and not live_df.empty else item["avg_price"]
@@ -1496,8 +1314,8 @@ if stock_code:
                 with cols[4]:
                     disp_name = item["confirmed_name"] if item["confirmed_name"] else "종목 미조회"
                     p_color = "#D32F2F" if item_profit > 0 else ("#1976D2" if item_profit < 0 else "#333333")
-                    st.markdown(f"<div style='font-size: 0.78rem; color: #333;'><b>{disp_name}</b> (현재가 {live_curr_price:,}원)</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='font-size: 0.90rem; font-weight: 800; color: {p_color};'>평가: {eval_item:,}원 ({item_rate:+.2f}% / {item_profit:+,}원)</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size: 0.78rem; color: #333;'><b>{disp_name}</b> ({live_curr_price:,}원)</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size: 0.90rem; font-weight: 800; color: {p_color};'>{eval_item:,}원 ({item_rate:+.2f}%)</div>", unsafe_allow_html=True)
                 with cols[5]:
                     st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
                     if st.button("🗑️", key=f"del_mp_{item['id']}"):
@@ -1515,82 +1333,59 @@ if stock_code:
             st.markdown("---")
             curr_cash = new_cash
             principal = new_principal
-
             total_account_assets = total_eval_stocks + curr_cash
             net_profit_total = total_account_assets - principal
             net_profit_rate = (net_profit_total / principal * 100) if principal > 0 else 0.0
-            stock_profit_total = total_eval_stocks - total_invested_stocks
-            stock_profit_rate = ((total_eval_stocks / total_invested_stocks - 1.0) * 100) if total_invested_stocks > 0 else 0.0
 
             fc1, fc2, fc3, fc4 = st.columns(4)
             fc1.metric("내 총 투자 원금", f"{principal:,}원")
-            fc2.metric("보유 주식 실시간 평가액", f"{total_eval_stocks:,}원", f"{stock_profit_rate:+.2f}% ({stock_profit_total:+,}원)")
-            fc3.metric("실시간 계좌 예수금(현금)", f"{curr_cash:,}원", f"현금 비중 {(curr_cash/total_account_assets*100 if total_account_assets>0 else 0):.1f}%")
-            fc4.metric("계좌 총자산 (주식+현금)", f"{total_account_assets:,}원", f"원금대비 {net_profit_rate:+.2f}% ({net_profit_total:+,}원)")
+            fc2.metric("주식 실시간 평가액", f"{total_eval_stocks:,}원")
+            fc3.metric("예수금 (현금)", f"{curr_cash:,}원", f"비중 {(curr_cash/total_account_assets*100 if total_account_assets>0 else 0):.1f}%")
+            fc4.metric("계좌 총자산", f"{total_account_assets:,}원", f"{net_profit_rate:+.2f}% ({net_profit_total:+,}원)")
 
             st.markdown("---")
-            st.markdown("##### ⚖️ [S값 시그널 + 50% 롱-숏 헤지 밴드] 통합 리밸런싱 진단기")
-            
+            st.markdown("##### ⚖️ [S값 + 50% 롱-숏 헤지] 리밸런싱 진단")
             lev_val = stock_eval_dict.get("233740", 0)
             inv_val = stock_eval_dict.get("251340", 0)
             target_inv_hedge = lev_val * 0.50
             hedge_diff = inv_val - target_inv_hedge
             actual_hedge_ratio = (inv_val / lev_val * 100) if lev_val > 0 else 0.0
 
-            today_dt = datetime.today()
-            this_year = today_dt.year
-            d_june = datetime(this_year, 6, 30)
-            d_dec = datetime(this_year, 12, 31)
-            
-            if today_dt <= d_june:
-                next_check_dt = d_june
-                next_check_name = "전반기(6월 말)"
-            elif today_dt <= d_dec:
-                next_check_dt = d_dec
-                next_check_name = "후반기(12월 말)"
-            else:
-                next_check_dt = datetime(this_year + 1, 6, 30)
-                next_check_name = "내년 전반기(6월 말)"
-            d_day = max(0, (next_check_dt - today_dt).days)
-
             if lev_val > 0:
                 if current_s_val >= 0:
-                    reb_title = "🔵 [S값 고점 회복] 인버스 50% 헤지 구축 & 레버리지 분할 익절 타이밍 (S ≥ 0)"
-                    reb_color = "#1976D2"
-                    reb_guidance = f"현재 S값이 <b>{current_s_val}</b>로 회복되었습니다. 레버리지 평가액의 50% 수준인 <b>약 {int(target_inv_hedge):,}원</b>으로 선물인버스(251340)를 진입하여 하락장 방어벽을 구축하세요."
+                    reb_title = "🔵 [고점 과열] 인버스 50% 헤지 구축 & 레버리지 익절"
+                    reb_color = "#1565C0"
+                    reb_guidance = f"현재 S값이 <b>{current_s_val}</b>입니다. 인버스(251340)를 <b>약 {int(target_inv_hedge):,}원 (50%)</b> 구축하세요."
                 elif current_s_val <= -40:
-                    reb_title = "🔴 [S값 바닥권 도달] 인버스 전량 수익 실현 & 레버리지 3~4차 집중 전환 (S ≤ -40)"
+                    reb_title = "🔴 [바닥 도달] 인버스 전량 익절 & 레버리지 집중 전환"
                     reb_color = "#D32F2F"
-                    reb_guidance = f"현재 3~4차 바닥권(S값: <b>{current_s_val}</b>)에 진입했습니다. 하락을 방어해 준 <b>인버스를 전량 익절 매도</b>하고, 확보된 현금으로 레버리지 저점 매수에 집중하세요."
+                    reb_guidance = "인버스를 전량 익절하고 레버리지 저점 매수에 집중하세요."
                 else:
                     if actual_hedge_ratio > 65.0:
-                        reb_title = "🟠 [밴드 상방 이탈] 인버스 비중 과다 ➔ 초과분 부분 익절 권장"
+                        reb_title = "🟠 [헤지 과다] 인버스 비중 상한 초과 ➔ 초과분 익절"
                         reb_color = "#FF8F00"
-                        reb_guidance = f"인버스 비중(<b>{actual_hedge_ratio:.1f}%</b>)이 상한선(65%)을 넘었습니다. 초과분 <b>약 {int(hedge_diff):,}원</b> 상당의 인버스를 익절해 예수금을 늘리세요."
+                        reb_guidance = f"인버스 비중이 <b>{actual_hedge_ratio:.1f}%</b>입니다. 초과분 약 {int(hedge_diff):,}원을 익절하세요."
                     elif actual_hedge_ratio < 35.0:
-                        reb_title = "🟠 [밴드 하방 이탈] 인버스 방어력 부족 ➔ 50% 수준 보충 권장"
+                        reb_title = "🟠 [헤지 부족] 인버스 방어력 약화 ➔ 50% 수준 보충"
                         reb_color = "#FF8F00"
-                        reb_guidance = f"인버스 비중(<b>{actual_hedge_ratio:.1f}%</b>)이 하한선(35%)에 미달합니다. 안정적 헤지를 위해 인버스를 <b>약 {int(abs(hedge_diff)):,}원</b> 보충하거나 S값 시그널을 대기하세요."
+                        reb_guidance = f"인버스 비중이 <b>{actual_hedge_ratio:.1f}%</b>에 미달합니다. 보충을 검토하세요."
                     else:
-                        reb_title = "🟢 [정상 균형] 50% 롱-숏 헤지 밴드 범위 안착"
+                        reb_title = "🟢 [정상 균형] 50% 롱-숏 헤지 범위 안착"
                         reb_color = "#2E7D32"
-                        reb_guidance = f"인버스 헤지 비율(<b>{actual_hedge_ratio:.1f}%</b>)이 목표 밴드(35%~65%) 내에 안정적으로 유지되고 있습니다."
+                        reb_guidance = "헤지 비율이 안정적입니다. 포지션을 유지하세요."
 
                 st.markdown(f"""
-                <div class="brief-card" style="border-left: 6px solid {reb_color}; background-color: #FAFAFA;">
-                    <div class="brief-title" style="color: {reb_color}; font-size: 0.98rem;">{reb_title}</div>
-                    <div style="font-size: 0.88rem; color: #222; line-height: 1.6;">
-                        • <b>헤지 현황</b>: 레버리지 <b>{lev_val:,}원</b> | 인버스 <b>{inv_val:,}원</b> (현재 헤지 비율: <b>{actual_hedge_ratio:.1f}%</b> / 목표: 50.0%)<br>
-                        • <b>행동 지침</b>: {reb_guidance}<br>
-                        • <b>📅 정기 리밸런싱 점검</b>: <b>{next_check_name}</b>까지 <b>D-{d_day}일</b> 남음
+                <div class="brief-card" style="border-left: 6px solid {reb_color};">
+                    <div class="brief-title" style="color: {reb_color};">{reb_title}</div>
+                    <div style="font-size:0.88rem; color:#222;">
+                        • <b>헤지 현황</b>: 레버리지 {lev_val:,}원 | 인버스 {inv_val:,}원 (비율: <b>{actual_hedge_ratio:.1f}%</b> / 목표: 50.0%)<br>
+                        • <b>행동 지침</b>: {reb_guidance}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-            else:
-                st.info("💡 보유 종목에 [KODEX 코스닥150레버리지(233740)] 수량이 입력되면 50% 롱-숏 헤지 진단기가 즉시 작동합니다.")
 
             st.markdown("---")
-            with st.expander("📝 [매수·매도 체결 일지 기록 & 잔고 자동 반영]", expanded=True):
+            with st.expander("📝 [체결 일지 기록 & 잔고 자동 연동]", expanded=True):
                 with st.form("smart_trade_log_form"):
                     tf1, tf2, tf3, tf4, tf5 = st.columns([1.1, 1.3, 1.0, 1.0, 1.0])
                     with tf1:
@@ -1604,21 +1399,15 @@ if stock_code:
                     with tf5:
                         log_qty = st.number_input("체결 수량(주)", min_value=1, value=100, step=10)
 
-                    auto_sync = st.checkbox("✅ 이 체결 내역을 위 [보유 종목 수량·평단가] 및 [예수금]에 즉시 자동 반영하기", value=True)
-                    submit_log = st.form_submit_button("➕ 체결 기록 저장 및 잔고 자동 업데이트", use_container_width=True)
+                    auto_sync = st.checkbox("✅ 위 [보유 종목 현황] 및 [예수금]에 즉시 자동 반영", value=True)
+                    submit_log = st.form_submit_button("➕ 체결 기록 저장", use_container_width=True)
                     
                     if submit_log:
                         code_res, name_res = resolve_code_and_name(log_stock)
                         trade_amt = int(log_price * log_qty)
-                        
                         acc["trade_logs"].append({
-                            "일자": log_date,
-                            "종목코드": code_res,
-                            "종목": name_res,
-                            "구분": log_type,
-                            "체결단가": int(log_price),
-                            "체결수량": int(log_qty),
-                            "체결금액": trade_amt
+                            "일자": log_date, "종목코드": code_res, "종목": name_res, "구분": log_type,
+                            "체결단가": int(log_price), "체결수량": int(log_qty), "체결금액": trade_amt
                         })
 
                         if auto_sync:
@@ -1646,32 +1435,19 @@ if stock_code:
                                 acc["user_cash"] = int(new_cash) + trade_amt
 
                         save_current_portfolio(acc)
-                        st.success(f"✅ [{log_type}] {name_res} {log_qty:,}주 기록 및 계좌 잔고 자동 반영 완료!")
+                        st.success(f"✅ [{log_type}] {name_res} {log_qty:,}주 기록 완료!")
                         st.rerun()
 
                 if acc.get("trade_logs"):
                     df_logs = pd.DataFrame(acc["trade_logs"]).iloc[::-1]
-                    st.dataframe(
-                        df_logs.style.format({
-                            "체결단가": "{:,}원",
-                            "체결수량": "{:,}주",
-                            "체결금액": "{:,}원"
-                        }),
-                        use_container_width=True,
-                        height=220
-                    )
-                    if st.button("🗑️ 체결 일지 기록 전체 초기화"):
+                    st.dataframe(df_logs.style.format({"체결단가": "{:,}원", "체결수량": "{:,}주", "체결금액": "{:,}원"}), use_container_width=True, height=220)
+                    if st.button("🗑️ 체결 일지 초기화"):
                         acc["trade_logs"] = []
                         save_current_portfolio(acc)
                         st.rerun()
 
-        # -----------------------------
-        # TAB 5: 엑셀 다운로드 & 계좌 데이터 백업/복원
-        # -----------------------------
         with tab5:
             st.markdown("##### 💾 원본 통합 엑셀 다운로드 (`PPP` 시트)")
-            st.caption("화면의 매수·매도 표와 동일한 최신순 정렬로 저장되며, MM, PM, LM, S, RM 및 세분화된 매수·매도 신호 색상이 100% 동일하게 적용됩니다.")
-            
             excel_bytes = generate_original_style_excel(stock_name, stock_code, s, df_display, df_full_result, reverse_order=True)
             st.download_button(
                 label=f"📥 [{stock_name}] 원본 양식 컬러 엑셀 다운로드 (.xlsx)",
@@ -1682,30 +1458,22 @@ if stock_code:
             )
 
             st.markdown("---")
-            st.markdown("##### 🔄 내 포트폴리오 & 즐겨찾기 백업 / 복원 (모바일·PC 연동용)")
-            st.caption("스마트폰이나 다른 PC에서 접속할 때, 내 계좌 설정·즐겨찾기·체결 일지를 파일 하나로 간편하게 내려받고 복원할 수 있습니다.")
-            
+            st.markdown("##### 🔄 포트폴리오 백업 / 복원")
             bk_col1, bk_col2 = st.columns(2)
             with bk_col1:
                 json_str = json.dumps(st.session_state.account_data, ensure_ascii=False, indent=2)
-                st.download_button(
-                    label="📤 내 계좌·즐겨찾기 통합 백업 내려받기 (.json)",
-                    data=json_str.encode('utf-8'),
-                    file_name=f"portfolio_backup_{datetime.today().strftime('%Y%m%d')}.json",
-                    mime="application/json",
-                    use_container_width=True
-                )
+                st.download_button("📤 백업 다운로드 (.json)", data=json_str.encode('utf-8'), file_name=f"portfolio_backup_{datetime.today().strftime('%Y%m%d')}.json", mime="application/json", use_container_width=True)
             with bk_col2:
-                uploaded_file = st.file_uploader("📥 백업된 JSON 파일 불러오기 (즉시 복원)", type=["json"], label_visibility="collapsed")
+                uploaded_file = st.file_uploader("📥 JSON 복원", type=["json"], label_visibility="collapsed")
                 if uploaded_file is not None:
                     try:
                         restored_data = json.load(uploaded_file)
                         if isinstance(restored_data, dict) and "items" in restored_data:
                             st.session_state.account_data = restored_data
                             save_current_portfolio(restored_data)
-                            st.success("✅ 계좌 및 즐겨찾기 복원이 완료되었습니다! 페이지를 새로고침합니다.")
+                            st.success("✅ 복원 완료!")
                             st.rerun()
                     except Exception:
-                        st.error("올바른 백업 JSON 파일이 아닙니다.")
+                        st.error("올바른 백업 파일이 아닙니다.")
     else:
         st.error("입력하신 종목의 데이터를 찾을 수 없습니다. 올바른 종목명 또는 6자리 종목코드를 입력해 주세요.")
